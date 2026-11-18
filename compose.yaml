@@ -1,0 +1,59 @@
+name: fee-workflow
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fees
+      POSTGRES_USER: fees
+      POSTGRES_PASSWORD: fees
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432" # host 5433 (5432 is taken locally); override with POSTGRES_PORT
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fees -d fees"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.8.1
+    ports:
+      - "8080:8080" # ingress
+      - "9070:9070" # admin API and UI
+    volumes:
+      - restate-data:/restate-data
+
+  app:
+    build: .
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/fees
+      DB_USER: fees
+      DB_PASSWORD: fees
+      RESTATE_INGRESS_URL: http://restate:8080
+    ports:
+      - "8081:8081" # public API and actuator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      restate:
+        condition: service_started
+
+  # One-shot: registers the app's Restate endpoint with the server, retrying until both are up.
+  register:
+    image: curlimages/curl:8.17.0
+    depends_on:
+      - app
+      - restate
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until curl -sf -X POST http://restate:9070/deployments \
+            -H 'content-type: application/json' \
+            -d '{"uri": "http://app:9080", "force": true}'; do
+          echo 'waiting for restate and app...'; sleep 2;
+        done
+        echo; echo 'deployment registered'
+
+volumes:
+  restate-data:

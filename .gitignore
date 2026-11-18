@@ -1,0 +1,24 @@
+# Build output
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+.kotlin/
+
+# OS
+.DS_Store
+
+# Local environment
+.env
+*.log
+# wikingai: machine-local
+.claude/settings.local.json
+.claude/wikingai/*.local.json
+.claude/wikingai/*.local/
+/.claude/

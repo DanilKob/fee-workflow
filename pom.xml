@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.2</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.cashi</groupId>
+    <artifactId>fee-workflow</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>fee-workflow</name>
+    <description>Transaction fee workflow: calculate, charge and record fees with Restate</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <restate.version>2.11.0</restate.version>
+        <restate-server.version>1.8.1</restate-server.version>
+
+        <!-- Overrides of Spring Boot 4.1.2 managed versions, required by the Restate SDK 2.11.0:
+             - Kotlin: the Restate SDK is compiled with Kotlin 2.4.21 (Boot manages 2.3.21).
+             - kotlinx-coroutines: the SDK needs 1.11.0; Boot's 1.10.2 fails at runtime with
+               NoSuchMethodError on Job.cancel (seen in the spike).
+             - Netty: the SDK's HTTP server is Vert.x 4.5, built for Netty 4.1 (Boot manages 4.2);
+               Restate's docs require 4.1.132.Final or later. Nothing else in this app uses Netty. -->
+        <kotlin.version>2.4.21</kotlin.version>
+        <kotlin-coroutines.version>1.11.0</kotlin-coroutines.version>
+        <netty.version>4.1.141.Final</netty.version>
+    </properties>
+
+    <dependencies>
+        <!-- Public REST API (POST /transaction/fee) and health -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Restate: workflow endpoint (port 9080) and the ingress Client bean -->
+        <dependency>
+            <groupId>dev.restate</groupId>
+            <artifactId>sdk-spring-boot-kotlin-starter</artifactId>
+            <version>${restate.version}</version>
+        </dependency>
+        <!-- The Restate endpoint uses Jackson 2 (com.fasterxml); Boot 4 ships Jackson 3 (tools.jackson)
+             and no longer brings Jackson 2 in. Version managed by Boot's jackson-2-bom. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Store of record: Postgres, schema managed by Flyway -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Kotlin -->
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-reflect</artifactId>
+        </dependency>
+
+        <!-- Tests -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-coroutines-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
+        <testSourceDirectory>${project.basedir}/src/test/kotlin</testSourceDirectory>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+                <configuration>
+                    <args>
+                        <arg>-Xjsr305=strict</arg>
+                    </args>
+                    <compilerPlugins>
+                        <!-- opens @Component-annotated classes, including @RestateComponent,
+                             so Spring and the Restate client can proxy them -->
+                        <plugin>spring</plugin>
+                        <!-- @Serializable payloads for Restate (kotlinx serialization) -->
+                        <plugin>kotlinx-serialization</plugin>
+                    </compilerPlugins>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-allopen</artifactId>
+                        <version>${kotlin.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-serialization</artifactId>
+                        <version>${kotlin.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+            <!-- Unit tests (*Test) run in `test` via Surefire (Boot's defaults).
+                 Integration tests (*IT) run in `verify` via Failsafe. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <restate.image>docker.restate.dev/restatedev/restate:${restate-server.version}</restate.image>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

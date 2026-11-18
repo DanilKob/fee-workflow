@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: fee-workflow
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/fees}
+    username: ${DB_USER:fees}
+    password: ${DB_PASSWORD:fees}
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  # public API; Restate ingress owns 8080
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+restate:
+  sdk:
+    http:
+      # Restate calls the workflow handlers on this port
+      port: ${RESTATE_SDK_PORT:9080}
+  client:
+    # Restate ingress; the controller submits workflows here
+    base-uri: ${RESTATE_INGRESS_URL:http://localhost:8080}
