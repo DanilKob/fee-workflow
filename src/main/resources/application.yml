@@ -5,9 +5,56 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/fees}
     username: ${DB_USER:fees}
     password: ${DB_PASSWORD:fees}
+    hikari:
+      # 2 s, in milliseconds (Hikari binds a plain long, not a Duration). Hikari's 30 s default
+      # would outlast the API's wait for the workflow, and a coroutine timeout can't interrupt a
+      # JDBC call that is waiting for a connection.
+      connection-timeout: 2000
+  jpa:
+    # Flyway owns the schema (KS-P1); Hibernate only checks that the entity matches it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        # Every timestamp is a UTC local date-time (D8), stored as timestamp(6) without zone, and
+        # nothing may depend on the JVM's zone. LocalDateTime goes to the driver as it is
+        # (setObject/getObject), never through java.sql.Timestamp. Not hibernate.jdbc.time_zone:
+        # with it, Hibernate converts through Timestamp in the JVM zone and renders in UTC, which
+        # shifted created_at by 14 hours under the UTC+14 IT JVM.
+        type:
+          java_time_use_direct_jdbc: true
   threads:
     virtual:
       enabled: true
+  mvc:
+    async:
+      # The backstop for a request whose call to Restate hangs: a 503 problem after 30 s. It must
+      # stay above fees.sync-wait plus 5 s, so a slow workflow gets its 202 (AC28) before this
+      # fires; the app refuses to start otherwise (api.SyncWaitCheck).
+      request-timeout: 30s
+
+fees:
+  # How long POST /transaction/fee waits for the workflow before it answers 202 with a status link
+  # (D11, AC28). It stops the polling only; the workflow keeps running. Must be positive, and at
+  # least 5 s below spring.mvc.async.request-timeout (checked at startup).
+  sync-wait: 10s
+
+springdoc:
+  # The OpenAPI document and Swagger UI of the public API, at springdoc's default paths. Off unless
+  # SPRINGDOC_ENABLED=true: the API has no authentication, so no deployment publishes an interactive
+  # form for the money-moving POST by default. The compose demo and the `it` profile turn it on.
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
+    path: /swagger-ui.html
+  model-converters:
+    kotlin-nullable-property-customizer:
+      # The request's fields are nullable in Kotlin only so the validator can list every missing
+      # one (AC27); on the wire each is required and never null, as the document says.
+      enabled: false
 
 server:
   # public API; Restate ingress owns 8080
@@ -31,3 +78,8 @@ restate:
   client:
     # Restate ingress; the controller submits workflows here
     base-uri: ${RESTATE_INGRESS_URL:http://localhost:8080}
+  components:
+    # The charge is reachable only from other Restate handlers (the workflow), never through the
+    # ingress (AC25). The key is the Restate service name.
+    FeeCharge:
+      ingress-private: true

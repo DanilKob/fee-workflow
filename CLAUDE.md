@@ -1,12 +1,15 @@
 # fee-workflow
 
-A Kotlin / Spring Boot 4 service with one public operation, `POST /transaction/fee`: it takes a
-settled transaction, works out its fee, charges it and records it, driven by a Restate workflow
-(calculate → charge → record) with Postgres as the system of record. What it must never do is charge
+A Kotlin / Spring Boot 4 service: `POST /transaction/fee` takes a settled transaction, works out its
+fee, charges it and records it, and `GET /transaction/{id}/fee` reads the result back. A Restate
+workflow (calculate → charge → record) drives it, with Postgres as the system of record. What it must never do is charge
 a transaction twice or get a fee wrong by a cent: `BigDecimal` all the way, HALF_UP once at the
 asset's scale, idempotent per `transaction_id`, nothing non-deterministic outside a durable step.
 The spec is `docs/requirements.md`. `./mvnw -q verify` (Docker running) is the gate, because
 `./mvnw test` skips every `*IT`.
+Business logic lives in a `…Service` interface with a `…ServiceImpl` (domain services stay Spring-free,
+wired in `config/DomainConfig`); a Kotlin `object` holds no business logic. `ArchitectureTest` enforces it
+(`docs/plan.md` §2, Q14–Q17).
 
 <!-- wikingai:knowledge:start -->
 ## Knowledge

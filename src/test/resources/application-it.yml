@@ -1,0 +1,39 @@
+# The `it` profile: every IT and Cucumber scenario runs with it, against the Testcontainers
+# Postgres and Restate server (support/TestInfrastructure wires Postgres as a service connection
+# and sets the Restate URL and the SDK port).
+
+fees:
+  # Short, so the slow-workflow scenarios (a delayed record save) reach the 202 quickly (AC28).
+  sync-wait: 1s
+
+restate:
+  components:
+    FeeWorkflow:
+      # A small, pinned retry budget, so the durability scenarios reach a paused invocation in
+      # seconds instead of after the server default of 70 attempts (AC23). It travels to the
+      # server in the endpoint manifest; RetryPolicyIT reads it back through the admin API.
+      # max-attempts counts the first attempt: 5 attempts tolerate 4 failures, and the 5th failure
+      # pauses the invocation (RetryPolicyIT and durability.feature pin both sides).
+      # on-max-attempts is pause, the server default, written out so no server setting can turn
+      # it into a kill. Never set it to kill: a FeeWorkflow killed after its charge loses the
+      # record (D2b, R3).
+      retry-policy:
+        initial-interval: 100ms
+        exponentiation-factor: 2.0
+        max-interval: 1s
+        max-attempts: 5
+        on-max-attempts: pause
+
+springdoc:
+  # OpenApiIT reads the document and the Swagger UI, which are off by default (application.yml).
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    # Testcontainers and the Restate SDK are chatty at INFO; failures still show.
+    org.testcontainers: WARN
+    tc: WARN
+    dev.restate.sdk: WARN

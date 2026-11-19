@@ -53,11 +53,11 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
 - **AC2.** All JSON keys, in both request and response, are snake_case. The 200 response contains exactly `transaction_id, amount, asset, type, fee, rate, description`, with no extra keys and no nulls.
 - **AC3.** Numbers are rendered in plain form, and the test checks the **raw text**, not a parsed value: `"amount":1000` (never `1000.0`, `1E+3` or `"1000"`), `"fee":1.5` (never `1.50`), `"rate":0.0015` (never `1.5E-3`). Rule: a value is printed as `stripTrailingZeros().toPlainString()` and emitted as a JSON number.
 - **AC4.** `asset_type`, `state` and `created_at` are **not** echoed in the response.
-- **AC5.** `amount` and `asset` are echoed as sent. `type` is echoed as the canonical label from the fee registry.
+- **AC5.** `amount` and `asset` are echoed as sent: the same number, rendered by AC3's rule, so `1000.00` comes back as `1000`. `type` is echoed as the canonical label from the fee registry. `type`, `asset` and `asset_type` match exactly (case-sensitive).
 
 ### `created_at` (D8)
 
-- **AC6.** `created_at` is **required** and accepted only in the format `yyyy-MM-dd HH:mm:ss.SSSSSS`: a space separator, exactly 6 fractional digits, no zone. `2023-08-30T15:42:17.610059Z`, `2023-08-30 15:42:17`, `2023-08-30 15:42:17.610` and `2023-08-30 25:00:00.000000` each return 400.
+- **AC6.** `created_at` is **required** and accepted only in the format `yyyy-MM-dd HH:mm:ss.SSSSSS`: a space separator, exactly 6 fractional digits, no zone. `2023-08-30T15:42:17.610059Z`, `2023-08-30 15:42:17`, `2023-08-30 15:42:17.610` and `2023-08-30 25:00:00.000000` each return 400. The year is exactly four unsigned digits, 0001 to 9999: a signed or longer year (`+294277-…`, `-5000-…`) returns 400, because `timestamp(6)` can't store it and the fee would be charged with no record.
 - **AC7.** It is interpreted as UTC and stored without loss as `timestamp(6)` without time zone. Reading it back renders exactly `"2023-08-30 15:42:17.610059"`. The test runs with a non-UTC JVM default zone to prove nothing shifts.
 
 ### Money (D9, D-assets)
@@ -81,7 +81,7 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
   - 1000 JPY gives `2` (scale 0).
   - 0.12345678 BTC gives `0.00018519` (scale 8).
 - **AC11.** An unknown `asset`, or an `asset`/`asset_type` mismatch (`USD` as `CRYPTO`, `BTC` as `FIAT`), returns 400.
-- **AC12.** An `amount` with more decimals than the asset's scale returns 400 (`10.001` USD). The fee is never negative and is charged in the transaction's asset.
+- **AC12.** An `amount` with more significant decimals than the asset's scale returns 400 (`10.001` USD). Trailing zeros don't count: `10.000` USD is valid. The fee is never negative and is charged in the transaction's asset.
 - **AC13.** A fee larger than the amount returns **400** before any workflow starts (D6b). Example: Bank Transfer of 0.10 USD with a flat fee of 0.50 USD. A fee equal to the amount is allowed.
 
 ### Transaction types (D6, D6a)
@@ -114,8 +114,8 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
 
 ### Persistence (D4)
 
-- **AC24.** Postgres is the system of record. Flyway migrations create a `fee_record` table with primary key `transaction_id`. It holds the request fields (including `created_at timestamp(6)`), fee, rate, rule id and version, description, `charge_id`, `charged_at`, state, payload fingerprint and `recorded_at`.
-- **AC25.** The charge itself lives in the `FeeCharge` Virtual Object's state (`charge_id`, amount, asset, `charged_at`), keyed by `transaction_id`. Calling `charge` again for the same key returns the same `charge_id`.
+- **AC24.** Postgres is the system of record. Flyway migrations create a `fee_record` table with primary key `transaction_id`. It holds the request fields (including `created_at timestamp(6)`), fee, rate, rule id and version, description, `charge_id`, `charged_at`, state, payload fingerprint and `recorded_at`. `state` holds only `SETTLED` (D3), enforced by a check constraint.
+- **AC25.** The charge itself lives in the `FeeCharge` Virtual Object's state (`charge_id`, amount, asset, payload fingerprint, `charged_at`), keyed by `transaction_id`. Calling `charge` again for the same key with the same fingerprint returns the same `charge_id`, even if a rule change has moved the fee since. A different fingerprint gets a terminal 409 and changes nothing. FeeCharge is ingress-private: only the workflow can call it.
 
 ### Validation and errors (D10, D-state)
 
@@ -123,21 +123,21 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
   - malformed JSON, or a missing or `null` required field;
   - an unknown `type`;
   - a missing `state`, or any value other than `SETTLED - PENDING FEE`;
-  - an `amount` that is zero, negative, a JSON string, or over the asset's scale;
+  - an `amount` that is zero, negative, a JSON string, over the asset's scale, or with more than 20 integer digits (the integer room of `numeric(38,18)`);
   - an unknown or mismatched asset (AC11), or a disallowed asset type for the type (AC15);
   - a fee greater than the amount (AC13);
   - a bad or missing `created_at` (AC6);
   - a blank `transaction_id`, or one over 64 characters or outside `[A-Za-z0-9_-]`.
-- **AC27.** Errors use RFC 9457 `application/problem+json`: `{"type","title","status","detail","errors":[{"field","message"}]}`. A response lists every invalid field. Status codes: 400 for bad input, 409 for a payload conflict, 503 when Restate is unreachable (nothing charged, safe to retry).
+- **AC27.** Errors use RFC 9457 `application/problem+json`: `{"type","title","status","detail","errors":[{"field","message"}]}`. A response lists every invalid field. Status codes: 400 for bad input, including a rule that rejects the transaction after the workflow started; 409 for a payload conflict; 503 when Restate or the fee records are unavailable. A refused connection to Restate says "nothing was started"; any other transport failure says "outcome unknown; resending the same request is safe". 409 is chosen only by a `payload_conflict` tag or a fingerprint mismatch, never by a status code alone.
 
 ### Slow workflows (D11)
 
 - **AC28.** If the workflow hasn't finished within 10 s (a config property), `POST` returns `202 Accepted` with `Location: /transaction/{id}/fee` and `{"transaction_id":"…","status":"PROCESSING"}`. The workflow keeps running.
-- **AC29.** `GET /transaction/{id}/fee` returns 200 with exactly the POST's 200 body once the workflow is done, 202 while it's still running, and 404 (problem+json) for an unknown id.
+- **AC29.** `GET /transaction/{id}/fee` returns 200 with exactly the POST's 200 body once the workflow is done, 202 while it's still running, and 404 (problem+json) for an unknown id. After the workflow rejected its input, GET answers the same 4xx problem the POST got. Known limit: a run an operator cancelled or killed answers 202 until retention ends.
 
 ### Testing
 
-- **AC30.** An **end-to-end test** sends the brief's sample payload to the real `POST /transaction/fee` over HTTP. The app runs on a random port against a real Restate server and real Postgres (Testcontainers), and the app's Restate endpoint is registered through the admin API **[V: walking skeleton `HelloWorkflowIT`]**. The test asserts AC1 and AC3 on the raw body, then asserts one `charge_id` and one `fee_record` row with the right values.
+- **AC30.** An **end-to-end test** sends the brief's sample payload to the real `POST /transaction/fee` over HTTP. The app runs on a random port against a real Restate server and real Postgres (Testcontainers), and the app's Restate endpoint is registered through the admin API **[V: walking skeleton; now `FeeEndToEndIT`]**. The test asserts AC1 and AC3 on the raw body, then asserts one `charge_id` and one `fee_record` row with the right values.
 - **AC31.** The fee calculator, the number serializer, the date parser and the validator each have plain unit tests (Surefire, `*Test`). Behaviour is also described as Cucumber features and scenarios (the brief's bonus), run through the same HTTP path as AC30 (Failsafe, `*IT`).
 
 ---
@@ -148,10 +148,10 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
 |---|---|---|---|---|
 | D0 | Restate API and build | **Reflection-based Kotlin API** (SDK 2.11.0), **Maven**, no KSP. Clients are typed proxies: `client.workflow<FeeWorkflow>(id).run(req)`. | KSP code generation (Gradle-only, deprecated since SDK 2.9.0). | Current default API. The spike and skeleton prove it on Maven. |
 | D0b | Platform | **Spring Boot 4.1.2**, **Java 21**, Restate server **1.8.1**. Overrides needed by the Restate SDK: Kotlin 2.4.21, kotlinx-coroutines 1.11.0, Netty 4.1.141, plus Jackson 2 `jackson-databind` (Boot 4 ships Jackson 3). | Spring Boot 3.5.x (what Restate builds against; free support ended June 2026). | The current stable line. Each override is documented in `pom.xml`. On JDK 21 the SDK warns that its pure-Java engine is deprecated (JDK 23+ recommended). |
-| D1 | Who serves `POST /transaction/fee` | **Spring controller** (port 8081) calling the Restate ingress (8080) through the `Client` bean. The SDK endpoint is on 9080. | Restate ingress directly, as service `transaction`, handler `fee`. Today that path is `/restate/call/transaction/fee`; the bare path was Restate 1.6 and earlier. | Exact path; full control of number format, 400/409/202/503 and validation before any workflow exists. |
-| D2 | What "charge" acts on | **`FeeCharge` Virtual Object keyed by `transaction_id`**. Its state holds `charge_id` (from `random().nextUUID()`), amount, asset and `charged_at`. A repeat call returns the same charge. `charge_id` and `charged_at` are copied onto `fee_record`. | Postgres double-entry ledger; fake external payments service; status flag only. | Charged once by Restate itself (one writer per key, journaled call). Charge (Restate) and record (Postgres) sit in different systems, so they really are two steps. |
+| D1 | Who serves `POST /transaction/fee` | **Spring controller** (port 8081) calling the Restate ingress (8080) through the `Client` bean. The SDK endpoint is on 9080; it is a trust boundary (unpublished in compose, no request signing). | Restate ingress directly, as service `transaction`, handler `fee`. Today that path is `/restate/call/transaction/fee`; the bare path was Restate 1.6 and earlier. | Exact path; full control of number format, 400/409/202/503 and validation before any workflow exists. |
+| D2 | What "charge" acts on | **`FeeCharge` Virtual Object keyed by `transaction_id`**. Its state holds `charge_id` (from `random().nextUUID()`), amount, asset, the payload fingerprint and `charged_at`. A repeat call with the same fingerprint returns the same charge; a different fingerprint is refused with 409. `charge_id` and `charged_at` are copied onto `fee_record`. | Postgres double-entry ledger; fake external payments service; status flag only. | Charged once by Restate itself (one writer per key, journaled call). Charge (Restate) and record (Postgres) sit in different systems, so they really are two steps. |
 | D2b | Recording keeps failing after the charge | **Retry, then pause.** `record` never fails terminally. Restate retries, then pauses the invocation for an operator to resume. No refund handler. | Saga: bounded retries, refund, mark FEE FAILED. | A short DB outage must not give up a correctly charged fee. A paused invocation is visible and recoverable. |
-| D3 | State after the fee | **`SETTLED`**, stored on `fee_record`, not returned. | `SETTLED - FEE CHARGED`; not tracked. | The input's naming suggests the fee is the last thing pending. |
+| D3 | State after the fee | **`SETTLED`**, stored on `fee_record` (the only value of `state`), not returned. | `SETTLED - FEE CHARGED`; not tracked. | The input's naming suggests the fee is the last thing pending. |
 | D4 | System of record | **Postgres**, schema by **Flyway**. JPA arrives with the first entity (together with the `kotlin-jpa` plugin). | Restate state only. | Fee records must outlive Restate's 24 h retention and be queryable by SQL. |
 | D5 | Where fee rules live | **Kotlin code registry** (`FeeSchedule`): typed rules, validated at startup, rule id and version stored on each record. | `application.yml`; a DB table. | Every rule change gets review and runs the tests. A config or DB source can sit behind the same interface later. |
 | D6 | Extra transaction types | **A small, fully tested set:** Bank Transfer (fixed, per asset, FIAT only) and Charity Donation (no fee), next to Mobile Top Up. **TODO, if time allows:** Card Payment (% + fixed), International Transfer (tiered), Crypto Withdrawal (% with min/max cap). | Full set of four new kinds; none. | Shows the one-place extension with two new fee kinds and minimal scope. |
@@ -173,11 +173,12 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
 - `FeeRule` is a sealed interface. Each kind implements `compute(amount, asset): BigDecimal` (unrounded), `nominalRate()` and `describe(asset)` itself, so no `when (type)` exists elsewhere. Implemented kinds: `Percentage(rate)`, `Fixed(perAsset)` and `NoFee`.
 - `TransactionType(label, rule, allowedAssetTypes, ruleId, version)`.
 - `FeeSchedule` is the single list of `TransactionType` entries, in one file. Validation and calculation both look types up there, and an unknown label is a 400, never a default fee.
-- Rounding to the asset's scale happens once, in `FeeCalculator`.
+- Rounding to the asset's scale happens once, in `FeeCalculationService` (its implementation `FeeCalculationServiceImpl`), the one owner of the fee rules.
+- Business logic lives in services: a `…Service` interface with a `…ServiceImpl`, unit-testable on its own and replaceable by a fake in its callers' tests. Domain services are plain Kotlin, wired as Spring beans in `config/DomainConfig`. `Money(amount, asset)` is a value object that enforces its bounds and rounds once; a valid `Transaction` is built only by the domain's `TransactionFactory`, which returns every violation at once. The value helper `DateFormatter` and the asset and fee registries (`AssetRegistry`, `FeeSchedule`, each an interface with a `Default…` implementation) are not services. Delivered by `plan.md` slices 7 and 8.
 
 **Adding a type:**
 1. Add one entry to `FeeSchedule`.
-2. Add one row to the Cucumber `Scenario Outline` examples table in `fees.feature` (type, asset, amount → fee, rate, description). That row runs through the real HTTP endpoint and Restate.
+2. Add one row to the Cucumber `Scenario Outline` examples table in `transaction_types.feature` (type, asset, amount → fee, rate, description). That row runs through the real HTTP endpoint and Restate.
 
 **Built-in safety net, with no extra work per type:**
 - A registry contract test iterates **every** registered type and checks that:
@@ -197,7 +198,7 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
 |---|---|---|---|
 | R1 | A second charge for the same transaction (retry, concurrent submissions, or a new workflow after retention) | money: double charge | Fire 10 identical requests in parallel: identical bodies, one `charge_id`, one record. Expire the workflow (short retention in the test profile, or purge), resubmit: same body and same `charge_id` (AC17, AC19). |
 | R2 | A crash between charge and record loses the record | data: a charge with no record | Fault injection: `record` throws on its first N attempts. After the retries, one record whose `charge_id` matches the Virtual Object's state (AC21). |
-| R3 | A terminal error after the charge, or `on_max_attempts = Kill`, drops the workflow | money and data | Assert the deployment's effective retry policy is `Pause` (admin API). A unit test asserts `record` never throws `TerminalException` (AC23). |
+| R3 | A terminal error after the charge, or `on_max_attempts = Kill`, drops the workflow | money and data | Assert the deployment's effective retry policy is `Pause` (admin API). An architecture test allows `TerminalException` only in the workflow's pre-charge rejection and FeeCharge's fingerprint check; a fault test shows a failing `record` retries and lands (AC23). |
 | R4 | The same id with a different amount silently returns the old result, or charges the new one | money and data | Submit 1000, then 2000, under the same id: 409, one `charge_id`, record still 1000 (AC18). Repeat after workflow retention expiry. |
 | R5 | `Double` creeps into the path (Jackson, kotlinx, JDBC) | money: off by a cent, systematically | The AC10 table end to end, plus a large-amount round trip (`12345678901234567.89`), plus an architecture test banning `Double`/`Float` in money packages. |
 | R6 | Wrong scale or rounding mode for an asset | money | A parameterised test over the asset registry, plus the 30 USD HALF_UP case (AC10). |
@@ -208,6 +209,6 @@ Each criterion can be checked by an automated test. "D*n*" refers to a decision 
 | R11 | `created_at` shifts by a time zone, or loses microseconds | data | A round trip renders exactly `2023-08-30 15:42:17.610059`, with the JVM default zone set to a non-UTC zone (AC7). |
 | R12 | A flat fee exceeds a tiny amount | money: the customer pays more than they moved | Bank Transfer of 0.10 USD → 400; the registry contract test covers new rules too (AC13). |
 | R13 | A fee rule edit changes historical or in-flight fees | data: the audit trail is wrong | The record stores rule id and version. A journaled `calculate` result is reused on replay (fault test with the rule swapped between attempts) (AC22). |
-| R14 | Restate is down: a blind client retry, or a charge outside the workflow | money | With Restate stopped: 503 problem+json, no charge. After restart the same request succeeds once (AC27). |
+| R14 | Restate is down: a blind client retry, or a charge outside the workflow | money | With the Restate ingress unreachable (a closed port): 503 problem+json, no charge (AC27). |
 | R15 | A slow workflow leaves the caller unsure whether to retry | money (double submission) or support load | Slow `record` in a test: 202 + `Location`, then GET returns the exact 200 body once done, with one `charge_id` (AC28, AC29). |
-| R16 | Spring Boot 4 vs Restate SDK version drift (Kotlin, coroutines, Netty, Jackson 2) | the app fails to start or serve | `HelloWorkflowIT`, and later the end-to-end test, run the real Spring-hosted endpoint against a real Restate server on every `verify` (D0b). |
+| R16 | Spring Boot 4 vs Restate SDK version drift (Kotlin, coroutines, Netty, Jackson 2) | the app fails to start or serve | `FeeEndToEndIT` (which replaced the walking skeleton's `HelloWorkflowIT`) and the Cucumber suite run the real Spring-hosted endpoint against a real Restate server on every `verify` (D0b). |

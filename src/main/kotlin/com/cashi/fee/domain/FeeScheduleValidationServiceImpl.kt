@@ -1,0 +1,32 @@
+package com.cashi.fee.domain
+
+/** Validates schedules against [assets]. Plain Kotlin: `config/DomainConfig` makes it a bean. */
+class FeeScheduleValidationServiceImpl(private val assets: AssetRegistry) : FeeScheduleValidationService {
+
+    override fun problems(schedule: FeeSchedule): List<String> {
+        val duplicates = schedule.types.groupBy { it.label }.filterValues { it.size > 1 }.keys
+        val duplicateProblems = duplicates.map { "the transaction type label \"$it\" is registered more than once" }
+        return duplicateProblems + schedule.types.flatMap(::ruleProblems)
+    }
+
+    override fun requireValid(schedule: FeeSchedule): FeeSchedule {
+        val problems = problems(schedule)
+        require(problems.isEmpty()) { "the fee schedule is invalid: ${problems.joinToString("; ")}" }
+        return schedule
+    }
+
+    private fun ruleProblems(type: TransactionType): List<String> =
+        when (val rule = type.rule) {
+            is FeeRule.Fixed -> rule.perAsset.mapNotNull { (code, fee) ->
+                val asset = assets.find(code)
+                when (asset) {
+                    null -> "${type.label} has a fixed fee for $code, which is not a registered asset"
+                    // The fee is charged as Money in its asset, so it must be one: its integer digits
+                    // and its decimals within the asset's scale.
+                    else -> Money.check(fee, asset)?.let { "${type.label}'s fixed fee of ${fee.toPlainString()} $code ${it.message}" }
+                }
+            }
+            // Their rate and description are checked when they are built, and they need no asset.
+            is FeeRule.Percentage, is FeeRule.NoFee -> emptyList()
+        }
+}

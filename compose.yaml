@@ -7,8 +7,11 @@ services:
       POSTGRES_DB: fees
       POSTGRES_USER: fees
       POSTGRES_PASSWORD: fees
+    restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-5433}:5432" # host 5433 (5432 is taken locally); override with POSTGRES_PORT
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432" # loopback only; host 5433 (5432 is taken locally); override with POSTGRES_PORT
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fees -d fees"]
       interval: 2s
@@ -17,19 +20,28 @@ services:
 
   restate:
     image: docker.restate.dev/restatedev/restate:1.8.1
+    restart: unless-stopped
+    environment:
+      # A stable node name: the default is the container's hostname, which changes whenever the
+      # container is recreated, and Restate then refuses the data already in restate-data.
+      RESTATE_NODE_NAME: restate
     ports:
-      - "8080:8080" # ingress
-      - "9070:9070" # admin API and UI
+      # loopback only: the app reaches both over the compose network
+      - "127.0.0.1:8080:8080" # ingress
+      - "127.0.0.1:9070:9070" # admin API and UI
     volumes:
       - restate-data:/restate-data
 
   app:
     build: .
+    restart: unless-stopped
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/fees
       DB_USER: fees
       DB_PASSWORD: fees
       RESTATE_INGRESS_URL: http://restate:8080
+      # The demo serves Swagger UI and /v3/api-docs; every other deployment has them off by default.
+      SPRINGDOC_ENABLED: "true"
     ports:
       - "8081:8081" # public API and actuator
     depends_on:
@@ -56,4 +68,5 @@ services:
         echo; echo 'deployment registered'
 
 volumes:
-  restate-data:
+  restate-data: # Restate's journal and state, including every FeeCharge; `down -v` deletes it
+  postgres-data:

@@ -31,7 +31,28 @@
         <kotlin.version>2.4.21</kotlin.version>
         <kotlin-coroutines.version>1.11.0</kotlin-coroutines.version>
         <netty.version>4.1.141.Final</netty.version>
+
+        <!-- Test libraries Spring Boot does not manage. Cucumber 7.34.x is built against Spring 7.0
+             and JUnit 6.0 (what Boot 4.1.2 manages); ArchUnit 1.5.x reads Java 21+ class files. -->
+        <cucumber.version>7.34.9</cucumber.version>
+        <archunit.version>1.5.1</archunit.version>
+
+        <!-- Swagger UI and /v3/api-docs. Boot doesn't manage springdoc; the 3.x line is built for
+             Spring Boot 4 (3.2.0 against Boot 4.1.2, the version this app uses). -->
+        <springdoc.version>3.2.0</springdoc.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.cucumber</groupId>
+                <artifactId>cucumber-bom</artifactId>
+                <version>${cucumber.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Public REST API (POST /transaction/fee) and health -->
@@ -43,12 +64,49 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- Swagger UI at /swagger-ui.html, OpenAPI document at /v3/api-docs -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+        <!-- Kotlin data classes for the Jackson 3 (tools.jackson) mapper Spring MVC uses;
+             Boot registers the module through findAndAddModules. Version managed by Boot. -->
+        <dependency>
+            <groupId>tools.jackson.module</groupId>
+            <artifactId>jackson-module-kotlin</artifactId>
+        </dependency>
+        <!-- The controller endpoints are suspend functions: Spring MVC runs them through Reactor's
+             mono {}, so without this Spring fails the first request with NoClassDefFoundError.
+             No version: Boot's BOMs supply it (and reactor-core), at kotlin-coroutines.version. -->
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-coroutines-reactor</artifactId>
+        </dependency>
 
         <!-- Restate: workflow endpoint (port 9080) and the ingress Client bean -->
         <dependency>
             <groupId>dev.restate</groupId>
             <artifactId>sdk-spring-boot-kotlin-starter</artifactId>
             <version>${restate.version}</version>
+            <exclusions>
+                <!-- Restate's Micrometer tracing for Kotlin handlers, switched on whenever an
+                     ObservationRegistry exists (actuator provides one). Its coroutine context
+                     element can't restore its observation scope after withContext(Dispatchers.IO)
+                     inside a runBlock, which every JDBC step does: Micrometer logs a warning per
+                     step, and under -ea (Surefire/Failsafe) throws an AssertionError that kills a
+                     coroutine dispatcher task. This app doesn't use Restate invocation tracing, and
+                     Restate's Spring support loads the interceptor reflectively, skipping it when
+                     absent. -->
+                <exclusion>
+                    <groupId>dev.restate</groupId>
+                    <artifactId>sdk-interceptor-micrometer</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- The Restate endpoint uses Jackson 2 (com.fasterxml); Boot 4 ships Jackson 3 (tools.jackson)
              and no longer brings Jackson 2 in. Version managed by Boot's jackson-2-bom. -->
@@ -57,7 +115,11 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Store of record: Postgres, schema managed by Flyway -->
+        <!-- Store of record: Postgres, schema managed by Flyway, fee_record mapped with JPA -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>
@@ -99,6 +161,35 @@
             <artifactId>kotlinx-coroutines-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Layering rules (ArchitectureTest) -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- BDD: feature files run through the same HTTP path as the end-to-end test.
+             FeaturesIT is a JUnit Platform suite, so Failsafe runs it with the other *IT. -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-spring</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -122,7 +213,13 @@
                         <plugin>spring</plugin>
                         <!-- @Serializable payloads for Restate (kotlinx serialization) -->
                         <plugin>kotlinx-serialization</plugin>
+                        <!-- no-arg constructors for @Entity classes, which Hibernate instantiates -->
+                        <plugin>jpa</plugin>
                     </compilerPlugins>
+                    <pluginOptions>
+                        <!-- entities stay plain, open classes (no data class, no proxies needed) -->
+                        <option>all-open:annotation=jakarta.persistence.Entity</option>
+                    </pluginOptions>
                 </configuration>
                 <dependencies>
                     <dependency>
@@ -135,14 +232,31 @@
                         <artifactId>kotlin-maven-serialization</artifactId>
                         <version>${kotlin.version}</version>
                     </dependency>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-noarg</artifactId>
+                        <version>${kotlin.version}</version>
+                    </dependency>
                 </dependencies>
             </plugin>
             <!-- Unit tests (*Test) run in `test` via Surefire (Boot's defaults).
-                 Integration tests (*IT) run in `verify` via Failsafe. -->
+                 Integration tests (*IT) run in `verify` via Failsafe.
+                 Both fail a run that finds no tests, so a mis-wired suite can't pass green. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <failIfNoTests>true</failIfNoTests>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
+                    <failIfNoTests>true</failIfNoTests>
+                    <!-- Every IT runs under a non-UTC default zone (UTC+14), so any zone shift of
+                         created_at, charged_at or recorded_at shows (AC7). -->
+                    <argLine>-Duser.timezone=Pacific/Kiritimati</argLine>
                     <systemPropertyVariables>
                         <restate.image>docker.restate.dev/restatedev/restate:${restate-server.version}</restate.image>
                     </systemPropertyVariables>
