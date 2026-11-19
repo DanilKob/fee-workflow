@@ -25,9 +25,9 @@ import java.math.BigDecimal
 import java.time.Duration
 
 /**
- * Durability (AC21–AC23, R2, R3, R13): faults after the charge, the retries that follow, a paused
- * invocation and its resume, and a fee schedule switched mid-flight. Every observation is made
- * from outside: Restate's admin API, the fee_record table, and `GET /transaction/{id}/fee`.
+ * Faults after the charge, the retries that follow, a paused run and its resume, and a fee
+ * schedule switched mid-flight. Everything is observed from outside: Restate's admin API, the
+ * fee_record table and `GET /transaction/{id}/fee`.
  */
 class DurabilitySteps(
     private val context: ScenarioContext,
@@ -54,7 +54,7 @@ class DurabilitySteps(
         records.failNextSave(transactionId, times)
     }
 
-    /** R3: a constraint-style failure is retried like any other, never turned terminal. */
+    /** A constraint-style failure is retried like any other, never turned terminal. */
     @Given("the next fee_record save for {string} fails with a DataIntegrityViolationException")
     fun theNextSaveFailsWithAnIntegrityViolation(transactionId: String) {
         records.failNextSave(transactionId, 1) { DataIntegrityViolationException("injected fee_record integrity violation") }
@@ -67,9 +67,8 @@ class DurabilitySteps(
     }
 
     /**
-     * AC22: the switch happens inside the first `record` attempt, so after `calculate` has been
-     * journaled and before the retry that replays it. That attempt then fails, so the run must
-     * replay `calculate` under the new rules.
+     * Switches the rules inside the first `record` attempt, after `calculate` was journaled. That
+     * attempt fails, so the retry replays `calculate` while the new rules are live.
      */
     @Given("the fee schedule reprices Mobile Top Up at {bigdecimal} as rule version {int} when the first fee_record save for {string} runs, which then fails")
     fun theScheduleSwitchesInTheFirstSave(rate: BigDecimal, version: Int, transactionId: String) {
@@ -79,7 +78,7 @@ class DurabilitySteps(
         }
     }
 
-    /** The switch took effect: a fresh quote of the brief's sample uses the new rule, so the scenario isn't vacuous. */
+    /** Proves the switch took effect, so the scenario isn't vacuous. */
     @Then("the live fee schedule now prices the brief's sample at {bigdecimal} under rule version {int}")
     fun theLiveSchedulePricesTheSample(fee: BigDecimal, version: Int) {
         val sample = Money(BigDecimal("1000"), checkNotNull(assets.find("USD")))
@@ -89,8 +88,8 @@ class DurabilitySteps(
     }
 
     /**
-     * The POST answered while the run was retrying: the 200 body GET now returns, or, when the
-     * retries outlasted `fees.sync-wait`, the status link (AC28).
+     * The POST answered while the run was retrying: the 200 body GET now returns, or the status
+     * link when the retries outlasted `fees.sync-wait`.
      */
     @Then("the POST got this same body, or the status link if the retries outlasted its wait")
     fun thePostGotTheSameBodyOrTheStatusLink() {
@@ -102,13 +101,13 @@ class DurabilitySteps(
         }
     }
 
-    /** AC23: the retry budget is spent, and Restate paused the invocation instead of failing it. */
+    /** The retry budget is spent, and Restate paused the invocation instead of failing it. */
     @When("the FeeWorkflow run for {string} is paused")
     fun theRunIsPaused(transactionId: String) {
         awaitRunStatus(transactionId, "paused", forbidden = "completed")
     }
 
-    /** AC21: the run finished, and never paused on the way. */
+    /** The run finished, and never paused on the way. */
     @Then("the FeeWorkflow run for {string} completes without pausing")
     fun theRunCompletesWithoutPausing(transactionId: String) {
         awaitRunStatus(transactionId, "completed", forbidden = "paused")

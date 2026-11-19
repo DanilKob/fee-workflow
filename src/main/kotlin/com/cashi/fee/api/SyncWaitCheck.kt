@@ -6,15 +6,14 @@ import org.springframework.stereotype.Component
 import java.time.Duration
 
 /**
- * Stops the application at startup unless `fees.sync-wait` plus [GRACE] is below
- * `spring.mvc.async.request-timeout` (KS-C2).
+ * Stops startup unless `fees.sync-wait` plus [GRACE] is below `spring.mvc.async.request-timeout`.
  *
- * A slow workflow must get its 202 with a status link (AC28) before Spring MVC gives up on the
- * request and answers the timeout's 503. The wait itself can outlast `fees.sync-wait`: the poll
- * that lands on the deadline gets 500 ms more, a record lookup may wait up to Hikari's 2 s
- * `connection-timeout` for a connection, and a duplicate reads the run's status before and after
- * waiting. [GRACE] covers all of it. An unset request timeout leaves the bound to the servlet
- * container, so it can't be checked and is refused too.
+ * A slow workflow must get its 202 before Spring MVC times the request out with a 503. The wait can
+ * outlast `fees.sync-wait`: the last poll gets 500 ms more, a record lookup may wait Hikari's 2 s
+ * for a connection, and a duplicate reads the run's status twice. [GRACE] covers all of it.
+ *
+ * An unset request timeout leaves the bound to the servlet container. It can't be checked, so it is
+ * refused too.
  */
 @Component
 class SyncWaitCheck(feeProperties: FeeProperties, webMvcProperties: WebMvcProperties) {
@@ -29,7 +28,7 @@ class SyncWaitCheck(feeProperties: FeeProperties, webMvcProperties: WebMvcProper
     }
 
     companion object {
-        /** The longest a request may take beyond `fees.sync-wait` (see the class comment). */
+        /** The longest a request may take beyond `fees.sync-wait`. */
         val GRACE: Duration = Duration.ofSeconds(5)
     }
 }

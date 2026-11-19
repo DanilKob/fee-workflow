@@ -20,17 +20,15 @@ import tools.jackson.databind.json.JsonMapper
 import java.net.ServerSocket
 
 /**
- * R14 and AC27's 503 (Q5): with the Restate ingress unreachable (a closed port), `POST` answers a
- * 503 problem that says nothing was started, and nothing is charged or recorded.
+ * With the Restate ingress unreachable (a closed port), `POST` answers a 503 that says nothing was
+ * started, and nothing is charged or recorded.
  *
- * Its own Spring context, so pointing the client at a closed port can't break the shared one: the
- * real app on its own random port, its own Restate endpoint port (the shared context holds
- * [TestInfrastructure.sdkPort] for the whole JVM) and no deployment registration. It shares only
- * the JVM-wide Postgres, and reads the real Restate server, which this context never reaches, to
- * show that nothing was started there. The context is closed after the class.
+ * It has its own Spring context, so the closed port can't break the shared one. It also needs its
+ * own SDK port, because the shared context holds [TestInfrastructure.sdkPort] for the whole JVM.
+ * It reads the real Restate server only to show nothing was started there.
  *
- * Postgres reaches this context through plain datasource properties, never as the container bean
- * of [TestInfrastructure.Connections]: Spring Boot stops a container bean when its context closes,
+ * Postgres is wired by datasource properties, never as the container bean of
+ * [TestInfrastructure.Connections]. Spring Boot stops a container bean when its context closes,
  * which would stop the Postgres every other IT shares.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -75,9 +73,8 @@ class RestateDownIT {
     }
 
     /**
-     * Restate's client at a port nothing listens on, so every connection is refused; the app's own
-     * Restate endpoint on a free port of its own. Nothing registers it: Restate is "down" here.
-     * The shared Postgres by its URL.
+     * Points the Restate client at a port nothing listens on, so every connection is refused.
+     * Nothing registers the app's endpoint: Restate is "down" here.
      */
     class ClosedIngress : ApplicationContextInitializer<ConfigurableApplicationContext> {
         override fun initialize(context: ConfigurableApplicationContext) {

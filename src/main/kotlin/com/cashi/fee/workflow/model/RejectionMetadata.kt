@@ -5,8 +5,7 @@ import dev.restate.sdk.common.TerminalException
 
 /**
  * How a [RejectionReason] travels on a Restate terminal failure: as the wire tag in its `reason`
- * metadata. The reader also accepts a `reason: ` message prefix, the fallback the plan names in
- * case metadata is lost on the way.
+ * metadata. The reader also accepts a `reason: ` message prefix, in case the metadata is lost.
  */
 object RejectionMetadata {
 
@@ -15,7 +14,7 @@ object RejectionMetadata {
     /** The metadata a tagged [TerminalException] carries. */
     fun of(reason: RejectionReason): Map<String, String> = mapOf(REASON_KEY to reason.wire)
 
-    /** The reason of a terminal failure, from its metadata or else its message prefix; null when untagged. */
+    /** The failure's tag, from its metadata or else its message prefix. Null when untagged. */
     fun reasonOf(metadata: Map<String, String>?, message: String?): RejectionReason? {
         RejectionReason.fromWire(metadata?.get(REASON_KEY))?.let { return it }
         return RejectionReason.entries.firstOrNull { message?.startsWith("${it.wire}: ") == true }

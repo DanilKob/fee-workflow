@@ -11,8 +11,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Money crosses the Restate journal as a JSON string (AC8), never a JSON number that a reader
- * could turn into a `double`. The scale is kept as it is: `1.50` stays `1.50`.
+ * Money crosses the Restate journal as a JSON string, never a JSON number that a reader could turn
+ * into a `double`. The scale is kept: `1.50` stays `1.50`.
  */
 object BigDecimalAsString : KSerializer<BigDecimal> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("com.cashi.fee.BigDecimal", PrimitiveKind.STRING)

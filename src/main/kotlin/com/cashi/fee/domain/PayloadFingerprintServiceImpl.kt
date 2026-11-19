@@ -3,9 +3,9 @@ package com.cashi.fee.domain
 import java.security.MessageDigest
 
 /**
- * SHA-256 over the canonical string: the amount as [Money.plain] renders it (`stripTrailingZeros`,
- * then `toPlainString`), the asset, the asset type, the type, the state and `created_at` as
- * [DateFormatter] formats it. Plain Kotlin: `config/DomainConfig` makes it a bean.
+ * SHA-256 in lowercase hex over the fields joined by the unit separator: the amount as
+ * [Money.plain] renders it, asset, asset type, type, state, and `created_at` as [DateFormatter]
+ * formats it.
  */
 class PayloadFingerprintServiceImpl : PayloadFingerprintService {
 

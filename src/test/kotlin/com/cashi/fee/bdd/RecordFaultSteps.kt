@@ -8,7 +8,7 @@ import io.cucumber.java.en.When
 import org.junit.jupiter.api.Assertions.assertEquals
 import java.time.Duration
 
-/** Faults armed on the fee_record writes of one `transaction_id` (plan §4), and what fired. */
+/** Faults armed on the fee_record writes of one `transaction_id`, and what fired. */
 class RecordFaultSteps(private val records: ControllableFeeRecordRepository) {
 
     /** Every scenario starts with nothing armed. */

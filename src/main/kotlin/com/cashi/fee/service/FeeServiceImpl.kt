@@ -23,18 +23,13 @@ import kotlin.time.Duration
 import kotlin.time.toKotlinDuration
 
 /**
- * Fingerprints the transaction, starts its workflow run and waits for the run's output for up to
- * `fees.sync-wait`; and looks a fee up for GET. The fingerprint comes from [PayloadFingerprintService],
- * and every failed call goes through [GatewayFailureMappingService] (plan §3 step 4, cases 1–6).
+ * Starts the workflow run and waits up to `fees.sync-wait` for its output.
  *
- * A send that finds a run already there is a duplicate (plan §3 step 4, D7): a stored record
- * decides first (D4), then the run's status, read before anything waits. Only a payload known to
- * be the run's waits as its own; a run that hasn't stored a fingerprint yet is waited for, and the
- * payload is checked afterwards. A payload that hasn't been checked never gets a 202: at the
- * deadline, or after a transport error while waiting, the run's status is read again (step 4.3).
+ * If a run already exists, a stored record decides first, then the run's status. An unchecked
+ * payload never gets a 202: at the deadline, or after a transport error, the status is read again.
  *
- * The record lookup is blocking JDBC, so it runs under [Dispatchers.IO] (KS-D5); every `catch`
- * here rethrows a [CancellationException] first (KS-R2).
+ * The record lookup is blocking JDBC, so it runs under [Dispatchers.IO]. Every `catch` here
+ * rethrows a [CancellationException] first, so cancellation is never swallowed.
  */
 @Service
 class FeeServiceImpl(
@@ -76,8 +71,8 @@ class FeeServiceImpl(
     }
 
     /**
-     * This payload is the run's (its send was accepted, or the run stored its fingerprint), so the
-     * run's rejection is this payload's, and a run still going at the deadline is a 202 (AC28).
+     * This payload is known to be the run's, so the run's rejection is this payload's, and a run
+     * still going at the deadline is a 202.
      */
     private suspend fun awaitOwnRun(transactionId: String, fingerprint: String): FeeChargeResult =
         when (val output = gateway.awaitOutput(transactionId, syncWait)) {
@@ -88,11 +83,9 @@ class FeeServiceImpl(
         }
 
     /**
-     * A run for this id already exists. A stored record decides by its fingerprint (D4). With none,
-     * the run's status decides before anything waits: another payload's fingerprint is a conflict
-     * and this payload's stored rejection is that rejection (Q8), both at once; this payload's
-     * fingerprint alone means the run is this payload's, so wait for it; no fingerprint yet means
-     * the run hasn't reached its first step, so wait and check the payload afterwards.
+     * A run for this id already exists. A stored record decides by its fingerprint. Otherwise the
+     * run's status decides before anything waits. With no fingerprint stored yet, the run hasn't
+     * reached its first step, so wait and check the payload afterwards.
      */
     private suspend fun onDuplicate(transactionId: String, fingerprint: String): FeeChargeResult {
         val record = when (val lookup = findRecord(transactionId)) {
@@ -114,9 +107,8 @@ class FeeServiceImpl(
     }
 
     /**
-     * The run had stored no fingerprint when the duplicate arrived, so this payload is unchecked: a
-     * result counts only with this payload's fingerprint, and every other end of the wait is
-     * decided by the status read again (plan §3 step 4.3).
+     * The run had no fingerprint when the duplicate arrived, so this payload is unchecked. A result
+     * counts only if its fingerprint matches. Any other end of the wait re-reads the status.
      */
     private suspend fun awaitUnchecked(transactionId: String, fingerprint: String): FeeChargeResult =
         when (val output = gateway.awaitOutput(transactionId, syncWait)) {
@@ -131,11 +123,9 @@ class FeeServiceImpl(
         }
 
     /**
-     * The wait for an unchecked payload ended without a result: at the deadline, after a transport
-     * error, or with the run's rejection ([ended]). The status read again decides as before the
-     * wait; this payload's run is its rejection or still going (a 202), and a run that still has
-     * no fingerprint hasn't started yet. A rejection is passed on only once the run is known to
-     * have this payload, since a rejection of another payload is the one wrong answer.
+     * The wait for an unchecked payload ended without a result, or with the run's rejection
+     * ([ended]). The re-read status decides. [ended] is passed on only once the run is known to
+     * have this payload, because another payload's rejection would be the wrong answer.
      */
     private suspend fun recheckStatus(transactionId: String, fingerprint: String, ended: OutputResult.Rejected? = null): FeeChargeResult =
         withStatus(transactionId) { run ->
@@ -148,9 +138,8 @@ class FeeServiceImpl(
         }
 
     /**
-     * What the run's stored status says of this payload: another payload's fingerprint is a
-     * conflict; this payload's stored rejection is that rejection (Q8); otherwise [ownRun] when the
-     * run has this payload's fingerprint, and [noFingerprint] when it has none yet.
+     * Another payload's fingerprint is a conflict. This payload's stored rejection is returned as
+     * it is. Otherwise [ownRun] if the fingerprint matches, or [noFingerprint] if none is stored.
      */
     private inline fun decideByStatus(
         run: RunStatus,
@@ -164,7 +153,7 @@ class FeeServiceImpl(
             else -> payloadConflict()
         }
 
-    /** The run's status, read once and handed to [decide]; an unreadable status is a 503 (case 4). */
+    /** The run's status, read once and handed to [decide]. An unreadable status is a 503. */
     private suspend inline fun withStatus(transactionId: String, decide: (RunStatus) -> FeeChargeResult): FeeChargeResult =
         when (val status = gateway.status(transactionId)) {
             is StatusResult.Known -> decide(status.status)
@@ -175,7 +164,7 @@ class FeeServiceImpl(
     private fun outcomeOf(output: OutputResult.Ready, fingerprint: String): FeeChargeResult =
         if (output.fingerprint == fingerprint) FeeChargeResult.Completed(output.result) else payloadConflict()
 
-    /** A failed call that can't need a status re-read: every phase but a wait with an unchecked payload. */
+    /** For a failed call that never needs a status re-read, which is all but an unchecked wait. */
     private fun unavailableOrFailed(phase: GatewayPhase, failure: GatewayFailure, payloadChecked: Boolean = true): FeeChargeResult =
         resultOf(phase, failure, failureMapping.outcomeOf(phase, failure, payloadChecked))
 
@@ -188,9 +177,8 @@ class FeeServiceImpl(
         }
 
     /**
-     * The stored record for [transactionId], or [RecordLookup.Unavailable] when the store can't be
-     * read (case 6): a data access failure, or a transaction that couldn't start because no
-     * connection could be had. The cause is logged here, once; the caller never sees it (O1).
+     * [RecordLookup.Unavailable] when the store can't be read. `TransactionException` is caught
+     * too, because a failed connection surfaces as one. The cause is logged here, never returned.
      */
     private suspend fun findRecord(transactionId: String): RecordLookup =
         try {
@@ -216,7 +204,6 @@ class FeeServiceImpl(
 
     private fun rejected(rejection: RunRejection): FeeChargeResult = FeeChargeResult.Rejected(rejection.reason, rejection.detail)
 
-    /** What the record lookup found: a record or none, or a store that can't be read. */
     private sealed interface RecordLookup {
         data class Found(val record: FeeRecord?) : RecordLookup
 

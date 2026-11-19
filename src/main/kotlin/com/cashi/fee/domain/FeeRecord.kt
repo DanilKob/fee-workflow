@@ -4,10 +4,7 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.UUID
 
-/**
- * One `fee_record` row (AC24): the request fields, the priced fee and its rule, the charge, and
- * the payload fingerprint. Every value is required; the state is always [SETTLED] (D3, Q2).
- */
+/** One `fee_record` row. Every value is required, and the state is always [SETTLED]. */
 data class FeeRecord(
     val transactionId: String,
     val amount: BigDecimal,
@@ -25,11 +22,11 @@ data class FeeRecord(
     val recordedAt: LocalDateTime,
     val fingerprint: String,
 ) {
-    /** The 200 body this record renders, the same for POST, a replay and GET (AC29). */
+    /** The 200 body, the same for the first POST, a resend and GET. */
     fun toResult(): FeeResult = FeeResult(transactionId, amount, asset, type, fee, rate, description)
 
     companion object {
-        /** The state after the fee (D3), the only value `fee_record.state` holds. */
+        /** The only value `fee_record.state` holds: the fee has been charged. */
         const val SETTLED: String = "SETTLED"
     }
 }

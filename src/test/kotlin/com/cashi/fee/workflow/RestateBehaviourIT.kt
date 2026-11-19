@@ -38,16 +38,16 @@ import java.math.BigDecimal
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * The Restate behaviours the design relies on (plan task 1.4), proven against the real server
- * through the real gateway:
+ * The Restate behaviours the design relies on, proven against the real server through the real
+ * gateway:
  * 1. a `TerminalException`'s `reason` metadata reaches the failure the client reads from the
  *    workflow's output, also when FeeCharge raised it and the workflow passed it on;
  * 2. state set just before a terminal failure stays readable from the shared `status()`;
  * 3. FeeCharge's ingress-private setting is proven in FeeEndToEndIT and fee_calculation.feature;
  * 4. a `run` sent straight to the ingress, past the API, is refused before the charge when its
  *    input breaks what the API guarantees (a forged fingerprint, an id that isn't the key);
- * 5. purging a completed workflow run (the end of workflow retention, AC19) deletes the workflow's
- *    journal and state and frees the key for a new run, while FeeCharge keeps its charge.
+ * 5. purging a completed workflow run, as workflow retention would, deletes the workflow's journal
+ *    and state and frees the key for a new run, while FeeCharge keeps its charge.
  */
 @FeeIntegrationTest
 class RestateBehaviourIT {
@@ -176,7 +176,10 @@ class RestateBehaviourIT {
         client.toWorkflow<FeeWorkflow>(key).request { run(input) }.send()
     }
 
-    /** The run under [key] ended rule_rejected with [detail], and nothing was charged or recorded under [ids]. */
+    /**
+     * The run under [key] ended rule_rejected with [detail], and nothing was charged or recorded
+     * under [ids].
+     */
     private suspend fun assertRejectedBeforeCharge(key: String, detail: String, vararg ids: String) {
         assertEquals(OutputResult.Rejected(400, RejectionReason.RULE_REJECTED, detail), awaitOutput(key))
         ids.forEach { id ->

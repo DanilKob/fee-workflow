@@ -14,7 +14,7 @@ import org.springframework.boot.webmvc.autoconfigure.WebMvcProperties
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
 
-/** The application refuses to start when `fees.sync-wait` could outlast the async request timeout (AC28). */
+/** Startup fails when `fees.sync-wait` could outlast the async request timeout. */
 class SyncWaitCheckTest {
 
     @Configuration(proxyBeanMethods = false)

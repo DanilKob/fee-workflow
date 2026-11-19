@@ -100,7 +100,7 @@ class ChargeSteps(
         context.chargeSnapshot = charge
     }
 
-    /** AC8: money crosses Restate as a JSON string, so no reader can turn it into a double. */
+    /** Money crosses Restate as a JSON string, so no reader can turn it into a double. */
     @Then("FeeCharge state for {string} holds the fee as the JSON string {string}")
     fun feeChargeHoldsTheFeeAsAString(transactionId: String, fee: String) {
         val stored = checkNotNull(Observations.chargeJson(transactionId)) { "FeeCharge holds no charge for $transactionId" }
@@ -110,8 +110,8 @@ class ChargeSteps(
     }
 
     /**
-     * AC7: the stored row, read back through the app's own repository (Hibernate, under the IT
-     * JVM's UTC+14 zone) and rendered in the API's format, is exactly what was sent.
+     * The stored row, read back through the app's repository under the IT JVM's UTC+14 zone,
+     * renders exactly what was sent, so no time-zone shift happened.
      */
     @Then("the fee_record row for {string}, read back through the app, has created_at {string}")
     fun theRowReadBackHasCreatedAt(transactionId: String, createdAt: String) {
@@ -119,7 +119,7 @@ class ChargeSteps(
         assertEquals(createdAt, DateFormatter.format(record.createdAt))
     }
 
-    /** Plants a charge for another payload, so the workflow's charge step refuses this one (Q8). */
+    /** Plants a charge for another payload, so the workflow's charge step refuses this one. */
     @Given("FeeCharge {string} already holds a charge for another payload")
     fun feeChargeAlreadyHoldsAnotherPayload(transactionId: String) {
         runBlocking {
@@ -128,8 +128,8 @@ class ChargeSteps(
     }
 
     /**
-     * An orphan charge (AC18): FeeCharge already holds a charge for the payload built so far, as a
-     * run that charged and then lost its record would leave it, with no workflow run and no row.
+     * An orphan charge: FeeCharge already holds a charge for this payload, with no workflow run and
+     * no row, as a run that charged and then lost its record would leave it.
      */
     @Given("FeeCharge {string} already holds a charge of {bigdecimal} {string} for this payload")
     fun feeChargeAlreadyHoldsThisPayload(transactionId: String, fee: BigDecimal, asset: String) {
@@ -168,13 +168,13 @@ class ChargeSteps(
         assertEquals(expected.map { (kind, label) -> Observations.JournalCommand(kind, label) }, Observations.workflowJournal(transactionId))
     }
 
-    /** AC19: the end of workflow retention, now. The run's journal and workflow state go; FeeCharge's state stays. */
+    /** Ends workflow retention now: the journal and workflow state go, FeeCharge's state stays. */
     @When("the workflow run for {string} is purged, as at the end of workflow retention")
     fun theWorkflowRunIsPurged(transactionId: String) {
         TestInfrastructure.admin.purgeWorkflow("FeeWorkflow", transactionId)
     }
 
-    /** One workflow instance per `transaction_id` (AC16): every resend joined it. */
+    /** One workflow instance per `transaction_id`: every resend joined it. */
     @Then("Restate ran exactly one FeeWorkflow run for {string}")
     fun exactlyOneRun(transactionId: String) {
         val runs = Observations.invocations(transactionId).filter { it.startsWith("FeeWorkflow/run ") }
@@ -249,10 +249,10 @@ class ChargeSteps(
         return Observations.feeRecords(jdbc, transactionId).single()
     }
 
-    /** The fingerprint of what was submitted, as the PayloadFingerprintService bean computes it (PayloadFingerprintServiceImplTest pins it). */
+    /** The fingerprint of what was submitted, from the app's PayloadFingerprintService bean. */
     private fun submittedFingerprint(): String = fingerprintOf(context.submittedBody())
 
-    /** The fingerprint of a valid request body, built by the TransactionFactory bean and fingerprinted by the PayloadFingerprintService bean. */
+    /** The fingerprint of a valid request body, built and fingerprinted by the app's own beans. */
     private fun fingerprintOf(json: String): String {
         val body = JSON.readTree(json)
         val input = TransactionInput(

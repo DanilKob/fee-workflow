@@ -24,16 +24,11 @@ import org.springframework.web.bind.annotation.RestController
 import java.net.URI
 
 /**
- * `POST /transaction/fee` (D1) and `GET /transaction/{id}/fee` (AC29): validate the input, ask
- * [FeeService], and map its result to HTTP. A 200 and a 202 are returned; every other answer
- * becomes an exception that [ApiExceptionHandler] renders as a problem.
+ * Validates the input, asks [FeeService], and maps the result to HTTP. Only a 200 or a 202 is
+ * returned directly. Every other answer is an exception that [ApiExceptionHandler] renders.
  *
- * Suspend endpoints run through Reactor's `mono {}`; nothing here blocks a thread or calls
- * `runBlocking`.
- *
- * Each endpoint describes itself for the OpenAPI document (`/v3/api-docs`, Swagger UI at
- * `/swagger-ui.html`): every status it answers, with the brief's sample as the example
- * ([FeeApiExamples]).
+ * The endpoints are suspend functions run through Reactor's `mono {}`, so nothing here may block a
+ * thread or call `runBlocking`.
  */
 @Tag(name = "Transaction fees")
 @RestController
@@ -74,7 +69,7 @@ class FeeController(
         return respond(id, feeService.chargeFee(transaction))
     }
 
-    /** The id pattern first: a bad id is a 400 that queries nothing (AC26). */
+    /** The id is checked first, so a bad id is a 400 that queries nothing. */
     @Operation(
         summary = "Get the fee charged for a transaction",
         description = "The POST's 200 body once the fee is recorded, 202 while the workflow is still running, " +
@@ -99,7 +94,7 @@ class FeeController(
         return respond(id, feeService.lookUpFee(id))
     }
 
-    /** POST and GET answer alike: the same 200 body (AC29), the same 202 (AC28), the same problems. */
+    /** POST and GET answer alike: the same 200 body, the same 202, the same problems. */
     private fun respond(id: String, result: FeeChargeResult): ResponseEntity<Any> =
         when (result) {
             is FeeChargeResult.Completed -> ResponseEntity.ok(TransactionFeeResponse.from(result.result))
@@ -115,8 +110,8 @@ class FeeController(
         }
 
     /**
-     * For the handler's log lines (O1); a request attribute, since the handler runs after this
-     * coroutine has ended, on whichever thread Spring's async dispatch picks.
+     * For the handler's log lines. A request attribute, not MDC, because the handler runs after
+     * this coroutine has ended, on whichever thread Spring's async dispatch picks.
      */
     private fun HttpServletRequest.rememberTransactionId(id: String) = setAttribute(TRANSACTION_ID_ATTRIBUTE, id)
 

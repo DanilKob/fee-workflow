@@ -7,12 +7,11 @@ import org.springframework.validation.annotation.Validated
 import java.time.Duration
 
 /**
- * The `fees.*` settings, validated when the application starts (KS-C2): a bad value stops it.
+ * The `fees.*` settings, validated at startup, so a bad value stops the application.
  *
- * [syncWait] is how long `POST /transaction/fee` waits for the workflow before it answers 202 with
- * a status link (D11, AC28). It bounds the polling only; nothing on the server is cancelled. It
- * must stay below `spring.mvc.async.request-timeout`, with a grace margin, so the 202 comes before
- * the request times out; the API's `SyncWaitCheck` refuses to start otherwise.
+ * [syncWait] is how long `POST /transaction/fee` waits for the workflow before it answers 202. It
+ * only stops the polling: nothing on the server is cancelled. `SyncWaitCheck` keeps it well below
+ * the request timeout, so the 202 comes before the request times out.
  */
 @ConfigurationProperties("fees")
 @Validated

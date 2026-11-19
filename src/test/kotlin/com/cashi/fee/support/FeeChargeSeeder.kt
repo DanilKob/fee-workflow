@@ -21,9 +21,9 @@ data class SeedCharge(
 )
 
 /**
- * Test-only: a public Restate service that charges the ingress-private FeeCharge object directly,
- * with any fee, asset and fingerprint. It lives in `src/test`, so only the test context registers
- * it. Scenarios use it to repeat a charge (AC25) and, later, to plant an orphan charge (AC18).
+ * Test-only public Restate service that charges the ingress-private FeeCharge directly, with any
+ * fee, asset and fingerprint. Scenarios use it to repeat a charge and to plant an orphan charge.
+ * It lives in `src/test`, so only the test context registers it.
  */
 @RestateComponent
 @Service

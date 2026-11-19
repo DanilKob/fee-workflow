@@ -1,9 +1,5 @@
 package com.cashi.fee.domain
 
-/**
- * The fee rules over an [AssetRegistry] and a [FeeSchedule]. Plain Kotlin: `config/DomainConfig`
- * makes it a bean.
- */
 class FeeCalculationServiceImpl(private val assets: AssetRegistry, private val schedule: FeeSchedule) : FeeCalculationService {
 
     override fun checkRules(assetCode: String?, assetType: AssetType?, typeLabel: String?): List<RuleViolation> {
@@ -30,8 +26,8 @@ class FeeCalculationServiceImpl(private val assets: AssetRegistry, private val s
     }
 
     /**
-     * What [type] allows: [assetType], then, for a fixed fee, a fee in [asset]. The second rule is
-     * skipped once the first is broken, so a disallowed asset type is reported once.
+     * Checks [assetType], then for a fixed fee a fee in [asset]. The second check is skipped once
+     * the first fails, so a disallowed asset type is reported once.
      */
     private fun typeRules(type: TransactionType, asset: Asset?, assetType: AssetType?): List<RuleViolation> {
         if (assetType != null && assetType !in type.allowedAssetTypes) {
@@ -44,7 +40,7 @@ class FeeCalculationServiceImpl(private val assets: AssetRegistry, private val s
         return emptyList()
     }
 
-    /** Whether this rule can price a fee in [asset]: only a fixed fee depends on the asset. */
+    /** Only a fixed fee depends on the asset. */
     private fun FeeRule.prices(asset: Asset): Boolean =
         when (this) {
             is FeeRule.Fixed -> hasFeeFor(asset)

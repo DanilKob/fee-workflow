@@ -11,9 +11,9 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 
 /**
- * The OpenAPI document and Swagger UI (plan task 6.4), served by the running app (the `it` profile
- * turns them on; they are off by default): both endpoints with every status they answer, the brief's
- * sample as the request example, and the schemas in the snake_case the API really speaks.
+ * The OpenAPI document and Swagger UI, served by the running app. They are off by default, and the
+ * `it` profile turns them on. The document lists both endpoints with every status they answer,
+ * uses the brief's sample as the request example, and shows the schemas in snake_case.
  */
 @FeeIntegrationTest
 class OpenApiIT {
@@ -68,9 +68,10 @@ class OpenApiIT {
     }
 
     /**
-     * The request's fields are nullable in Kotlin only for the validator (AC27); with springdoc's
-     * kotlin-nullable-property-customizer off (application.yml) the document shows each as required
-     * and never null. A misspelt or renamed key would turn them optional and nullable here.
+     * The request's fields are nullable in Kotlin only so the validator can list every bad field.
+     * With springdoc's kotlin-nullable-property-customizer off (application.yml), the document
+     * shows each one as required and never null. A misspelt or renamed key would make them
+     * optional and nullable here.
      */
     @Test
     fun `the request schema marks every field required and none nullable`() {

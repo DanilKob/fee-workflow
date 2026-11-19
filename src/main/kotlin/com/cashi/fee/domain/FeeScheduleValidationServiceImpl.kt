@@ -1,6 +1,5 @@
 package com.cashi.fee.domain
 
-/** Validates schedules against [assets]. Plain Kotlin: `config/DomainConfig` makes it a bean. */
 class FeeScheduleValidationServiceImpl(private val assets: AssetRegistry) : FeeScheduleValidationService {
 
     override fun problems(schedule: FeeSchedule): List<String> {
@@ -21,12 +20,11 @@ class FeeScheduleValidationServiceImpl(private val assets: AssetRegistry) : FeeS
                 val asset = assets.find(code)
                 when (asset) {
                     null -> "${type.label} has a fixed fee for $code, which is not a registered asset"
-                    // The fee is charged as Money in its asset, so it must be one: its integer digits
-                    // and its decimals within the asset's scale.
+                    // The fee is charged as Money in its asset, so it must fit that asset's bounds.
                     else -> Money.check(fee, asset)?.let { "${type.label}'s fixed fee of ${fee.toPlainString()} $code ${it.message}" }
                 }
             }
-            // Their rate and description are checked when they are built, and they need no asset.
+            // These check themselves when built, and need no asset.
             is FeeRule.Percentage, is FeeRule.NoFee -> emptyList()
         }
 }

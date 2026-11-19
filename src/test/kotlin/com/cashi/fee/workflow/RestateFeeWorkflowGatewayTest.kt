@@ -29,18 +29,20 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
 /**
- * How the gateway reads a failed ingress call (plan §3 step 4, cases 1–3; Q4, AC27). "Nothing was
- * started" is a promise only a refused connection or an unresolved host may make; every other
- * transport failure may have reached Restate, and is an unknown outcome.
+ * How the gateway reads a failed ingress call. "Nothing was started" is a promise only a refused
+ * connection or an unresolved host may make. Any other transport failure may have reached Restate,
+ * so its outcome is unknown.
  *
- * And how it bounds a wait whose poll hangs: the Restate client sets no request timeout, so only
- * the gateway's own cutoff (the deadline plus `LAST_POLL_GRACE`) keeps a stalled output read from
- * holding the request until `spring.mvc.async.request-timeout` turns it into a 503 instead of the
- * AC28 202.
+ * Also how it bounds a wait whose poll hangs. The Restate client sets no request timeout, so only
+ * the gateway's own cutoff (the deadline plus `LAST_POLL_GRACE`) stops a stalled output read.
+ * Without it, `spring.mvc.async.request-timeout` would answer a 503 instead of the slow-run 202.
  */
 class RestateFeeWorkflowGatewayTest {
 
-    /** Without the cutoff the wait would never end: the timeout fails the test instead of hanging the build. */
+    /**
+     * Without the cutoff the wait would never end. The timeout fails the test instead of hanging
+     * the build.
+     */
     @Test
     @Timeout(10)
     fun `a poll that never gets an answer is cut off at the deadline plus the grace, and the wait is pending`() {
@@ -73,7 +75,7 @@ class RestateFeeWorkflowGatewayTest {
         return result to started.elapsedNow()
     }
 
-    /** Never before the deadline; never much past the deadline plus the last poll's grace. */
+    /** Never before the deadline, and never much past the deadline plus the last poll's grace. */
     private fun assertCutOffInTime(elapsed: Duration) {
         assertTrue(elapsed >= DEADLINE) { "gave up after $elapsed, before the $DEADLINE deadline" }
         val limit = DEADLINE + RestateFeeWorkflowGateway.LAST_POLL_GRACE + MARGIN
@@ -104,7 +106,7 @@ class RestateFeeWorkflowGatewayTest {
             runCatching {
                 val input = socket.getInputStream().bufferedReader(Charsets.ISO_8859_1)
                 while (true) {
-                    // One request: its head ends with an empty line; a GET has no body.
+                    // One request: its head ends with an empty line, and a GET has no body.
                     generateSequence { input.readLine() }.takeWhile { it.isNotEmpty() }.count().takeIf { it > 0 } ?: return
                     if (requests.incrementAndGet() == 1 && answerFirstPollNotReady) {
                         socket.getOutputStream().apply {
@@ -151,7 +153,10 @@ class RestateFeeWorkflowGatewayTest {
         assertTrue(RestateFeeWorkflowGateway.isAlreadyInvoked(failure(409, body = """{"message":"the workflow method was already invoked"}""")))
     }
 
-    /** Restate's cancel and kill also end with 409: only the "already invoked" wording makes a duplicate. */
+    /**
+     * Restate's cancel and kill also end with 409. Only the "already invoked" wording makes a
+     * duplicate.
+     */
     @Test
     fun `any other 409, or another status, is not a duplicate`() {
         assertFalse(RestateFeeWorkflowGateway.isAlreadyInvoked(failure(409, body = """{"message":"the invocation was killed"}""")))

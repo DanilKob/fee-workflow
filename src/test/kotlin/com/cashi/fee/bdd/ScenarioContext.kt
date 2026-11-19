@@ -26,14 +26,14 @@ class ScenarioContext {
     /** The last `POST /transaction/fee` response, kept when a GET follows, to compare against. */
     var postResponse: HttpResponse<String>? = null
 
-    /** The scenario's first `POST /transaction/fee` response and body, which resends are held to (AC17, AC19). */
+    /** The scenario's first `POST /transaction/fee` response and body, which resends must match. */
     var firstPostResponse: HttpResponse<String>? = null
     var firstSubmittedBody: String? = null
 
-    /** A `POST /transaction/fee` still in flight, sent while the scenario goes on (AC16). */
+    /** A `POST /transaction/fee` still in flight while the scenario goes on. */
     var backgroundResponse: CompletableFuture<HttpResponse<String>>? = null
 
-    /** The responses of identical requests sent at once (AC17). */
+    /** The responses of identical requests sent at once. */
     var concurrentResponses: List<HttpResponse<String>> = emptyList()
 
     /** The fee_record row as first observed, every column as text, to compare against later. */
@@ -42,7 +42,7 @@ class ScenarioContext {
     /** FeeCharge's state as first observed (or as planted), to compare against later. */
     var chargeSnapshot: Charge? = null
 
-    /** The charge planted in FeeCharge before any request: an orphan charge (AC18). */
+    /** The charge planted in FeeCharge before any request: an orphan charge. */
     var seededCharge: Charge? = null
 
     /** The answer of a repeated charge: the charge, or the failure's status and raw body. */

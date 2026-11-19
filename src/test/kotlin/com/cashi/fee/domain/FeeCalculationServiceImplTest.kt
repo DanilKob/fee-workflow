@@ -11,7 +11,7 @@ import java.math.BigDecimal
 
 /**
  * The fee rules and the price. An amount reaches [FeeCalculationService.quote] as [Money], so its
- * bounds already hold (MoneyTest, TransactionFactoryImplTest): no amount here can expand an exponent.
+ * bounds already hold and no amount here can expand an exponent.
  */
 class FeeCalculationServiceImplTest {
 
@@ -41,7 +41,7 @@ class FeeCalculationServiceImplTest {
         "10, 0.02", // 0.015 rounds up; Double gives 0.01
         "330, 0.50", // 0.495 rounds up; Double gives 0.49
         "30, 0.05", // 0.045: HALF_UP gives 0.05, HALF_EVEN 0.04
-        "0.01, 0.00", // a fee that rounds to zero is still a fee (Q3)
+        "0.01, 0.00", // a fee that rounds to zero is still a fee
         "12345678901234567.89, 18518518351851.85", // 18518518351851.851835, every digit kept
     )
     fun `rounds once, HALF_UP, at the asset's scale`(amount: String, fee: String) {
@@ -51,15 +51,18 @@ class FeeCalculationServiceImplTest {
         assertEquals(2, quote.fee.amount.scale())
     }
 
-    /** Every asset of AC9, mostly on a HALF_UP tie at its own scale; the money.feature AC9 rows, unit-sized. */
+    /**
+     * Every registered asset, mostly on a half-up tie at its own scale.
+     * These are the per-asset rows of money.feature, at unit-test size.
+     */
     @ParameterizedTest(name = "{0} {1} -> {3}")
     @CsvSource(
         "12345.67, USD, FIAT, 18.52", // 18.518505
         "30, EUR, FIAT, 0.05", // 0.045: a tie, HALF_UP
         "330, GBP, FIAT, 0.50", // 0.495
-        "1000, JPY, FIAT, 2", // 1.5 at scale 0 (AC10)
+        "1000, JPY, FIAT, 2", // 1.5 at scale 0
         "3000, JPY, FIAT, 5", // 4.5: a tie, HALF_EVEN would give 4
-        "0.12345678, BTC, CRYPTO, 0.00018519", // 0.00018518517 (AC10)
+        "0.12345678, BTC, CRYPTO, 0.00018519", // 0.00018518517
         "0.00003, BTC, CRYPTO, 0.00000005", // 0.000000045: a tie at scale 8
         "1.234567890123456789, ETH, CRYPTO, 0.001851851835185185", // 18 decimals kept, past what a Double holds
         "0.000000000000003, ETH, CRYPTO, 0.000000000000000005", // 0.0000000000000000045: a tie at scale 18
@@ -75,8 +78,8 @@ class FeeCalculationServiceImplTest {
         assertEquals(asset, quote.asset)
     }
 
-    // An amount with more significant decimals than its asset's scale is no Money: MoneyTest and
-    // TransactionFactoryImplTest refuse it, for every asset, before any price is computed.
+    // An amount with more significant decimals than its asset's scale can't be Money.
+    // MoneyTest and TransactionFactoryImplTest cover that, before any price is computed.
 
     @Test
     fun `trailing zeros are not decimals for any asset (Q13)`() {
@@ -94,7 +97,7 @@ class FeeCalculationServiceImplTest {
         )
     }
 
-    /** AC14: Bank Transfer is a flat fee per fiat asset, whatever the amount; its rate is 0 (D6a). */
+    /** Bank Transfer is a flat fee per fiat asset, whatever the amount. Its rate is 0. */
     @ParameterizedTest(name = "{0} {1} -> {2}")
     @CsvSource(
         delimiter = '|',
@@ -117,7 +120,10 @@ class FeeCalculationServiceImplTest {
         assertEquals(1, quote.ruleVersion)
     }
 
-    /** AC14: Charity Donation is free in every asset, fiat and crypto, and still a quote (Q3: still charged). */
+    /**
+     * Charity Donation is free in every asset, fiat and crypto. It is still a quote, so a zero
+     * charge is still made.
+     */
     @ParameterizedTest(name = "{0} {1}")
     @CsvSource(
         "1000, USD, FIAT",
@@ -137,7 +143,10 @@ class FeeCalculationServiceImplTest {
         assertEquals("charity-donation", quote.ruleId)
     }
 
-    /** AC13, D6b: a fee larger than the amount is refused on the amount; a fee equal to it is charged. */
+    /**
+     * A fee larger than the amount is refused, reported on the amount.
+     * A fee equal to the amount is charged.
+     */
     @ParameterizedTest(name = "{0} {1}")
     @CsvSource(
         delimiter = '|',
@@ -162,7 +171,7 @@ class FeeCalculationServiceImplTest {
         assertEquals(0, quote.fee.compareTo(money(amount, asset)))
     }
 
-    /** AC15: the type's allowed asset types, read from the registered asset's own asset type. */
+    /** A type's allowed asset types are checked against the registered asset's own asset type. */
     @ParameterizedTest(name = "Bank Transfer in {0}")
     @ValueSource(strings = ["BTC", "ETH", "USDC", "USDT"])
     fun `a type used with an asset type it doesn't allow is refused on the type`(asset: String) {
@@ -179,7 +188,7 @@ class FeeCalculationServiceImplTest {
             listOf(RuleViolation(TransactionField.ASSET_TYPE, "BTC is CRYPTO"), RuleViolation(TransactionField.TYPE, BANK_TRANSFER_NOT_CRYPTO)),
             calculator.checkRules("BTC", AssetType.FIAT, BANK_TRANSFER),
         )
-        // USD sent as CRYPTO: only the asset type is wrong; USD is fiat, which Bank Transfer allows.
+        // USD sent as CRYPTO: only the asset type is wrong. Bank Transfer allows fiat USD.
         assertEquals(
             listOf(RuleViolation(TransactionField.ASSET_TYPE, "USD is FIAT")),
             calculator.checkRules("USD", AssetType.CRYPTO, BANK_TRANSFER),
@@ -192,8 +201,8 @@ class FeeCalculationServiceImplTest {
     }
 
     /**
-     * AC15: a fixed fee with no fee configured for the asset is refused, never priced. The shipped
-     * schedule configures every fiat asset (FeeScheduleContractTest), so a test schedule reaches it.
+     * A fixed fee with no amount configured for the asset is refused, never priced. The shipped
+     * schedule configures every fiat asset, so only a test schedule can reach this case.
      */
     @Test
     fun `a fixed fee with no fee for the asset is refused on the asset`() {
@@ -216,7 +225,10 @@ class FeeCalculationServiceImplTest {
         assertInstanceOf(FeeCalculation.Quoted::class.java, calculator.quote(money("1000"), "USD Transfer"))
     }
 
-    /** A null argument is a field the caller has already reported: its rules are skipped, the others run (AC27). */
+    /**
+     * A null argument is a field the caller has already reported. Its rules are skipped, and the
+     * others still run, so every bad field is listed.
+     */
     @Test
     fun `a field already reported skips only the rules that need it`() {
         assertEquals(emptyList<RuleViolation>(), calculator.checkRules(null, null, null))
@@ -248,9 +260,9 @@ class FeeCalculationServiceImplTest {
         assertEquals(listOf(TransactionField.TYPE, TransactionField.ASSET), rejected.violations.map { it.field })
     }
 
-    // The amount's own bounds (its integer digits, its decimals, `1E-500000000` and `1E+2147483647`
-    // within 100 ms) are Money's invariants and the factory's checks: MoneyTest and
-    // TransactionFactoryImplTest. An amount and a rule violation are listed together there too.
+    // The amount's own bounds (integer digits, decimals, and huge or tiny exponents refused fast)
+    // belong to Money and the factory, and MoneyTest and TransactionFactoryImplTest cover them.
+    // Those tests also list an amount violation together with a rule violation.
 
     @Test
     fun `the rules without an amount are checked on their own`() {

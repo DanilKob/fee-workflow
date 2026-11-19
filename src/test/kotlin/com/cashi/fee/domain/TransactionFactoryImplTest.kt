@@ -21,8 +21,8 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 /**
- * The one way to build a transaction (Q19): every domain check, every violation at once, each field
- * at most once, in the words the API shows (AC26, AC27).
+ * The one way to build a transaction. It runs every domain check and returns every violation at
+ * once, each field at most once, in the words the API shows.
  */
 class TransactionFactoryImplTest {
 
@@ -69,7 +69,10 @@ class TransactionFactoryImplTest {
         )
     }
 
-    /** The API relies on it: a field it refused for its JSON type arrives as null and gets one violation, `is required`. */
+    /**
+     * The API relies on this: a field it refused for its JSON type arrives as null and gets one
+     * violation, `is required`.
+     */
     @ParameterizedTest(name = "{0}")
     @EnumSource(TransactionField::class)
     fun `a missing field gets exactly one violation, and hides no other field's`(field: TransactionField) {
@@ -97,9 +100,9 @@ class TransactionFactoryImplTest {
     }
 
     /**
-     * Each bound is read from precision and scale, so a huge or a tiny exponent is refused at once:
-     * the bounds for every asset first, then the sign, then the asset's own scale. Pricing
-     * `1E-500000000` would compute 10^500000000 in `setScale`: minutes of CPU per request.
+     * Each bound is read from precision and scale, so a huge or a tiny exponent is refused at once.
+     * The order is the bounds for every asset, then the sign, then the asset's own scale. Pricing
+     * `1E-500000000` would compute 10^500000000 in `setScale`, costing minutes of CPU per request.
      */
     @ParameterizedTest(name = "amount {0} -> {1}")
     @CsvSource(
@@ -145,7 +148,7 @@ class TransactionFactoryImplTest {
     @ParameterizedTest(name = "{0} {1} as {2}")
     @CsvSource(
         "1000, JPY, FIAT",
-        "1000.0, JPY, FIAT", // trailing zeros don't count, even at scale 0 (Q13)
+        "1000.0, JPY, FIAT", // trailing zeros don't count, even at scale 0
         "0.12345678, BTC, CRYPTO",
         "1.234567890123456789, ETH, CRYPTO",
         "0.003, USDC, CRYPTO",
@@ -200,7 +203,10 @@ class TransactionFactoryImplTest {
         )
     }
 
-    /** Pricing is the calculation service's: a fee larger than the amount is no reason to refuse the transaction itself. */
+    /**
+     * Pricing belongs to the calculation service, so a fee larger than the amount is no reason to
+     * refuse the transaction itself.
+     */
     @Test
     fun `the factory doesn't price`() {
         val transaction = created(input(type = "Bank Transfer", amount = "0.10"))
@@ -225,7 +231,10 @@ class TransactionFactoryImplTest {
         assertEquals("a".repeat(64), created(input(transactionId = "a".repeat(64))).transactionId)
     }
 
-    /** AC27: every field invalid at once, each listed exactly once: the fields in order, then the rules. */
+    /**
+     * Every field is invalid at once, and each is listed exactly once: the fields in order, then
+     * the rules.
+     */
     @Test
     fun `every field invalid at once is listed once each`() {
         val violations = violations(

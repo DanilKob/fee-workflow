@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 
-/** Plan §3 step 4's failure cases, one test each, with the exact wording the caller gets (AC27, Q4). */
+/** Each gateway failure case, one test each, with the exact wording the caller gets. */
 class GatewayFailureMappingServiceImplTest {
 
     private val mapping = GatewayFailureMappingServiceImpl()
@@ -60,7 +60,10 @@ class GatewayFailureMappingServiceImplTest {
         }
     }
 
-    /** Plan §3 step 6: an untagged terminal failure (a cancel or a kill is a 409 too) is a 500, never a 409 or a 202. */
+    /**
+     * An untagged terminal failure is a 500, never a 409 or a 202. A cancel or a kill is a 409 too,
+     * so the status alone proves nothing.
+     */
     @Test
     fun `a run that ended with an error status while waiting is a 500, checked or not`() {
         listOf(409, 500).forEach { code ->
@@ -80,7 +83,7 @@ class GatewayFailureMappingServiceImplTest {
         assertEquals(5, Unavailability.RECORDS_UNAVAILABLE.retryAfterSeconds)
     }
 
-    /** Q4: "nothing was started" is the one promise only a refused connection may make. */
+    /** "Nothing was started" is a promise only a refused connection may make. */
     @Test
     fun `only a refused connection says nothing was started`() {
         Unavailability.entries.filter { it != Unavailability.NOTHING_STARTED }.forEach {

@@ -17,11 +17,11 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 import java.net.URI
 
 /**
- * The one place errors become RFC 9457 `application/problem+json` (D10, AC27). A body that isn't
- * JSON and a request that timed out get this API's problems; Spring MVC's other exceptions (wrong
- * method, wrong media type, …) keep the base class's. A problem carries only fixed details and
- * field errors, never an exception's message; a 5xx is logged once, with the `transaction_id` and
- * the phase when known (O1).
+ * The one place errors become RFC 9457 `application/problem+json`. Spring MVC's other exceptions
+ * (wrong method, wrong media type, …) keep the base class's handling.
+ *
+ * A problem carries only fixed details and field errors, never an exception's message. Each 5xx is
+ * logged once, with the `transaction_id` and the phase when known.
  */
 @RestControllerAdvice
 class ApiExceptionHandler : ResponseEntityExceptionHandler() {
@@ -33,8 +33,8 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         invalidRequestProblem("One or more fields are invalid.", failure.errors).toResponse()
 
     /**
-     * Malformed JSON, a body that isn't a JSON object, or no body (AC26): the same 400 problem as
-     * invalid fields, with no field listed, since the body never bound to any.
+     * Malformed JSON, a body that isn't a JSON object, or no body. The same 400 problem as invalid
+     * fields, with no field listed, since the body never bound to any.
      */
     public override fun handleHttpMessageNotReadable(
         ex: HttpMessageNotReadableException,
@@ -60,7 +60,7 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
     fun feeNotFound(failure: FeeNotFoundException): ResponseEntity<ProblemDetail> =
         problem(HttpStatus.NOT_FOUND, "fee-not-found", "Fee not found", "No fee is known for this transaction_id.").toResponse()
 
-    /** A 503 with the unavailability's fixed wording and its `Retry-After` (AC27, plan §3 step 4). */
+    /** A 503 with the unavailability's fixed wording and its `Retry-After`. */
     @ExceptionHandler(FeeUnavailableException::class)
     fun unavailable(failure: FeeUnavailableException): ResponseEntity<ProblemDetail> {
         log.warn(
@@ -82,8 +82,8 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
     }
 
     /**
-     * The request outlived `spring.mvc.async.request-timeout`, which is set above `fees.sync-wait`,
-     * so only a call that hangs gets here. The run may or may not have started: a 503 that says so.
+     * The request timeout is set above `fees.sync-wait`, so only a hung call gets here. The run may
+     * or may not have started, and the 503 says so.
      */
     public override fun handleAsyncRequestTimeoutException(
         ex: AsyncRequestTimeoutException,
@@ -99,7 +99,7 @@ class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         return handleExceptionInternal(ex, unavailableProblem(TIMEOUT_DETAIL), retryAfter, HttpStatus.SERVICE_UNAVAILABLE, request)
     }
 
-    /** Logged with the `transaction_id` once the controller has validated one; the problem stays fixed. */
+    /** Logged with the `transaction_id` if the controller got that far. The problem stays fixed. */
     @ExceptionHandler(Exception::class)
     fun unexpected(failure: Exception, request: WebRequest): ResponseEntity<ProblemDetail> {
         log.error("fee request failed unexpectedly: transaction_id={}", transactionIdOf(request), failure)

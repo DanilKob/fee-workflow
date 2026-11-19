@@ -40,11 +40,10 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
- * [FeeWorkflowGateway] over the Restate ingress [Client]: the only class that touches the client,
- * [IngressException] or [SendStatus]. It maps the service's types to and from the journal types.
+ * The only class that touches the Restate [Client], [IngressException] or [SendStatus].
  *
- * The run is sent through the typed proxy of D0 (`toWorkflow<FeeWorkflow>`), so the service can
- * wait on its own terms; the output is polled, never attached.
+ * The run is sent, not called, so the service can wait with its own deadline. The output is
+ * polled, never attached, so nothing is held open on the server.
  */
 @Component
 class RestateFeeWorkflowGateway(
@@ -69,9 +68,8 @@ class RestateFeeWorkflowGateway(
     }
 
     /**
-     * Polls first after 50 ms, then doubles the interval up to 1 s; the last poll lands on the
-     * deadline. The client sets no request timeout of its own, so a poll that hangs is cut off too:
-     * the whole wait is bounded by the deadline plus one poll's grace. Either way only the polling
+     * Polls first after 50 ms, then doubles the interval up to 1 s. The client has no request
+     * timeout, so a hung poll is cut off at the deadline plus [LAST_POLL_GRACE]. Only the polling
      * stops; the run keeps going.
      */
     override suspend fun awaitOutput(transactionId: String, deadline: Duration): OutputResult =
@@ -107,7 +105,7 @@ class RestateFeeWorkflowGateway(
             StatusResult.Failed(failureOf(failure, transactionId, GatewayPhase.STATUS))
         }
 
-    /** A failed output read: a tagged rejection when the body carries a tag, else a failure. */
+    /** A tagged rejection if the error body carries a tag, otherwise a failure. */
     private fun outputFailure(failure: IngressException, transactionId: String): OutputResult {
         if (failure.statusCode >= 400) {
             val body = failure.responseBody?.let(::parseBody)
@@ -118,10 +116,8 @@ class RestateFeeWorkflowGateway(
     }
 
     /**
-     * The failure as a value, after logging it once with its cause (O1): the value keeps only what
-     * the caller's problem needs, so the log line is where the cause survives. It never reaches
-     * the response. A duplicate send and a tagged rejection are outcomes, not failures, and aren't
-     * logged here.
+     * Logs the failure once with its cause, because the returned value drops the cause and the
+     * response never shows it. A duplicate send or a tagged rejection is an outcome, not a failure.
      */
     private fun failureOf(failure: IngressException, transactionId: String, phase: GatewayPhase): GatewayFailure {
         log.warn(
@@ -146,8 +142,8 @@ class RestateFeeWorkflowGateway(
         }
 
     /**
-     * The stored status in service terms. The workflow only ever stores a known tag, so a
-     * rejection whose tag is unknown cannot occur; it would read as no rejection.
+     * The workflow only stores known tags. An unknown tag can't occur, and would read as no
+     * rejection.
      */
     private fun WorkflowStatus.toRunStatus(): RunStatus =
         RunStatus(
@@ -163,10 +159,9 @@ class RestateFeeWorkflowGateway(
         private val log: Logger = LoggerFactory.getLogger(RestateFeeWorkflowGateway::class.java)
 
         /**
-         * What a failed ingress call means, as a pure function of the failure (plan §3 step 4,
-         * cases 1–3, Q4). "Nothing was started" is a promise only a refused connection or a host
-         * that did not resolve may make; any other transport failure may have reached Restate, so
-         * its outcome is unknown. A failure with a status is the status, whatever its cause.
+         * Only a refused connection or an unresolved host may promise "nothing was started". Any
+         * other transport failure may have reached Restate, so its outcome is unknown. A failure
+         * with a status is that status, whatever its cause.
          */
         internal fun classify(failure: IngressException): GatewayFailure =
             when {
@@ -177,10 +172,9 @@ class RestateFeeWorkflowGateway(
             }
 
         /**
-         * A send refused because the workflow already ran for this key: Restate's 409 "the workflow
-         * method was already invoked" (the spike's form; a `send` normally reports it as
-         * `PREVIOUSLY_ACCEPTED`). It is a duplicate, not a failure. Any other 409, such as a cancel
-         * or kill, is not.
+         * Restate's 409 "the workflow method was already invoked": a duplicate, not a failure. A
+         * `send` normally reports this as `PREVIOUSLY_ACCEPTED`. Any other 409, such as a cancel or
+         * kill, is not a duplicate.
          */
         internal fun isAlreadyInvoked(failure: IngressException): Boolean =
             failure.statusCode == 409 &&
@@ -193,8 +187,8 @@ class RestateFeeWorkflowGateway(
         private val MAX_POLL: Duration = 1.seconds
 
         /**
-         * How long the poll that lands on the deadline may take before the wait gives up on it.
-         * `SyncWaitCheck` keeps the request timeout above the deadline plus this.
+         * How long the last poll may run past the deadline. `SyncWaitCheck` keeps the request
+         * timeout above the deadline plus this.
          */
         internal val LAST_POLL_GRACE: Duration = 500.milliseconds
     }

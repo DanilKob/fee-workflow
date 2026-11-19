@@ -7,9 +7,8 @@ import org.springframework.test.context.ContextConfiguration
 
 /**
  * The one Spring context every IT shares: the real app on a random port, the `it` profile, and
- * [TestInfrastructure]'s Postgres (a `@ServiceConnection`) and Restate. Every IT class (and the Cucumber configuration)
- * carries exactly this annotation and nothing that changes the context, so Spring's test context
- * cache builds the context once per JVM.
+ * [TestInfrastructure]'s Postgres and Restate. Each IT class carries exactly this annotation and
+ * nothing that changes the context, so Spring's test context cache builds it once per JVM.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)

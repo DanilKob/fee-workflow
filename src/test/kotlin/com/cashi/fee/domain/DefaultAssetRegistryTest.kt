@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
-/** The registry this service ships (AC9, D-assets), and the bounds every asset must respect. */
+/** The shipped asset registry, and the bounds every asset must respect. */
 class DefaultAssetRegistryTest {
 
     private val registry = DefaultAssetRegistry()

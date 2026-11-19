@@ -11,7 +11,7 @@ data class FeeQuote(
     val ruleId: String,
     val ruleVersion: Int,
 ) {
-    /** The asset's code: the fee is charged in the transaction's asset (AC12). */
+    /** The asset code. The fee is always in the transaction's own asset. */
     val asset: String get() = fee.asset.code
 }
 
@@ -27,30 +27,25 @@ sealed interface FeeCalculation {
 }
 
 /**
- * The one owner of the fee rules (requirements §4). [TransactionFactory] runs [checkRules] on every
- * transaction it builds, for the API before any workflow starts and for the workflow's `calculate`
- * step again, so a rule redeployed mid-flight can't price what the API refused; [quote] then prices.
+ * The one owner of the fee rules. [TransactionFactory] runs [checkRules] in the API, before any
+ * workflow starts, and again in the workflow's `calculate` step. So a rule redeployed mid-flight
+ * can't price what the API refused.
  *
- * [checkRules] needs no amount, so the API can list every invalid field at once (AC27). [quote]
- * takes an amount that is already [Money], so its bounds hold before any multiply or `setScale`, and
- * no exponent, huge or tiny, is ever expanded. It rounds once, `HALF_UP`, at the asset's scale (D9),
- * and refuses a fee larger than the amount (AC13, D6b).
- *
- * Each field gets at most one violation, so the API never lists a field twice (AC27).
+ * [quote] takes [Money], so the amount's bounds hold before any arithmetic and no exponent is
+ * expanded. Each field gets at most one violation, so the API never lists a field twice.
  */
 interface FeeCalculationService {
 
     /**
-     * The rules that need no amount, every violation at once; empty when they all pass:
-     * - the type is registered (`type`), and the asset is registered (`asset`);
-     * - the asset is of [assetType] (`asset_type`, AC11);
-     * - the type allows the asset's asset type (`type`, AC15);
-     * - a fixed-fee type has a fee for the asset (`asset`, AC15).
+     * Every violation of the rules that need no amount, with the field each is reported on:
+     * - the type is registered (`type`), and so is the asset (`asset`);
+     * - the asset is of [assetType] (`asset_type`);
+     * - the type allows the asset's asset type (`type`);
+     * - a fixed-fee type has a fee for the asset (`asset`).
      *
-     * A null argument is a field the caller has already reported as missing or malformed: the
-     * rules that need it are skipped and the others still run, so one invalid field hides no other
-     * (AC27). The type's rules read the registered asset's own asset type when the asset is known,
-     * so a mismatched [assetType] neither hides nor invents a type violation.
+     * A null argument is a field the caller already reported. Rules that need it are skipped and
+     * the rest still run, so one invalid field hides no other. The type's rules use the registered
+     * asset's own type, so a wrong [assetType] neither hides nor invents a type violation.
      */
     fun checkRules(assetCode: String?, assetType: AssetType?, typeLabel: String?): List<RuleViolation>
 
@@ -58,10 +53,9 @@ interface FeeCalculationService {
     fun quote(transaction: Transaction): FeeCalculation
 
     /**
-     * The price of [amount] under the type [typeLabel]: the rule's fee, rounded once, `HALF_UP`, at
-     * the asset's scale. A fee larger than the amount is refused on `amount` (AC13, D6b); a fee
-     * equal to it is charged. The rules of [checkRules] are checked again first, on the amount's own
-     * asset, so nothing is ever priced under a type that can't price it.
+     * The fee for [amount] under [typeLabel], rounded once, half-up, at the asset's scale. A fee
+     * equal to the amount is charged, and a larger one is refused on `amount`. [checkRules] runs
+     * again first, so nothing is priced under a type that can't price it.
      */
     fun quote(amount: Money, typeLabel: String): FeeCalculation
 }

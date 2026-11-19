@@ -24,7 +24,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** Building a request, sending it to `POST /transaction/fee` (or asking `GET /transaction/{id}/fee`) over HTTP, and reading the response. */
+/** Builds a request, sends it over HTTP to the POST or GET endpoint, and checks the response. */
 class TransactionSteps(
     private val context: ScenarioContext,
     @param:Value("\${local.server.port}") private val port: Int,
@@ -43,7 +43,7 @@ class TransactionSteps(
         )
     }
 
-    /** The amount as raw JSON text (so `1000.00` and `1E+30` go out as written), with its asset and asset type. */
+    /** Amount as raw JSON text (so `1000.00` and `1E+30` go out as written), asset and asset type. */
     @Given("it is {word} {string} of asset type {string}")
     fun itIsAnAmountOf(rawAmount: String, asset: String, assetType: String) {
         context.payload["amount"] = rawAmount
@@ -72,7 +72,7 @@ class TransactionSteps(
         checkNotNull(context.payload.remove(field)) { "$field is not in the payload" }
     }
 
-    /** AC7's premise: the JVM runs in a zone with an offset (Failsafe sets UTC+14), so a shift would show. */
+    /** The JVM runs in a zone with an offset (Failsafe sets UTC+14), so a time-zone shift would show. */
     @Given("the JVM's default time zone is not UTC")
     fun theJvmZoneIsNotUtc() {
         val offset = ZoneId.systemDefault().rules.getOffset(Instant.now())
@@ -101,13 +101,13 @@ class TransactionSteps(
         submit(context.payloadJson())
     }
 
-    /** The scenario's first payload, exactly as it was first sent (AC19: in either order). */
+    /** The scenario's first payload, exactly as it was first sent. */
     @When("the first payload is submitted again")
     fun theFirstPayloadIsSubmittedAgain() {
         submit(checkNotNull(context.firstSubmittedBody) { "no request was submitted in this scenario" })
     }
 
-    /** Sent on another thread: the scenario goes on while this POST waits for its answer (AC16). */
+    /** Sent on another thread: the scenario goes on while this POST waits for its answer. */
     @When("it is submitted in the background")
     fun itIsSubmittedInTheBackground() {
         val body = context.payloadJson()
@@ -115,7 +115,7 @@ class TransactionSteps(
         context.backgroundResponse = CompletableFuture.supplyAsync { Http.postJson(feeEndpoint(), body) }
     }
 
-    /** [times] identical POSTs, released together from their own threads (AC17). */
+    /** [times] identical POSTs, released together from their own threads. */
     @When("it is submitted {int} times at once")
     fun itIsSubmittedAtOnce(times: Int) {
         val body = context.payloadJson()
@@ -141,7 +141,7 @@ class TransactionSteps(
         submit(body)
     }
 
-    /** `GET /transaction/{id}/fee` (AC29). The POST's response is kept to compare against. */
+    /** `GET /transaction/{id}/fee`. The POST's response is kept to compare against. */
     @When("the fee of {string} is requested")
     fun theFeeIsRequested(transactionId: String) {
         context.response = Http.get(feeUrl(transactionId))
@@ -197,7 +197,7 @@ class TransactionSteps(
         }
     }
 
-    /** The 400 problem's `errors[]` (AC27) holds this one field and message, and nothing else. */
+    /** The 400 problem's `errors[]` holds this one field and message, and nothing else. */
     @Then("the problem lists exactly the invalid field {string} with the message {string}")
     fun theProblemListsExactly(field: String, message: String) {
         val errors = responseJson().get("errors")
@@ -210,8 +210,8 @@ class TransactionSteps(
     }
 
     /**
-     * AC27: the problem lists these fields with these messages, and no other; each field once. The
-     * order is not compared: field errors come before rule errors, which is the validator's to keep.
+     * The problem lists exactly these fields and messages, each field once. The order isn't
+     * compared: keeping field errors before rule errors is the validator's job.
      */
     @Then("the problem lists exactly these invalid fields:")
     fun theProblemListsExactlyTheseFields(expected: Map<String, String>) {
@@ -231,7 +231,7 @@ class TransactionSteps(
         assertEquals(value, context.response().headers().firstValue(header).orElse(null)) { "$header in ${context.response().headers().map()}" }
     }
 
-    /** AC17: every one of the identical requests sent at once got a 200, and all got the same bytes. */
+    /** Every identical request sent at once got a 200 with the same bytes. */
     @Then("every one of those responses is 200 with the same body")
     fun everyResponseIs200WithTheSameBody() {
         val responses = context.concurrentResponses
@@ -240,7 +240,7 @@ class TransactionSteps(
         assertEquals(listOf(responses.first().body()), responses.map { it.body() }.distinct())
     }
 
-    /** AC17, AC19: a resend (or a GET) answers byte for byte what the scenario's first POST answered with its 200. */
+    /** A resend, or a GET, answers byte for byte what the scenario's first POST answered. */
     @Then("the response body is exactly the first POST's 200 body")
     fun theResponseBodyIsTheFirstPosts() {
         assertEquals(200, context.firstPostResponse().statusCode(), context.firstPostResponse().body())
@@ -249,8 +249,8 @@ class TransactionSteps(
     }
 
     /**
-     * The POST sent in the background was not refused: it got the same 200 body, or, when the run
-     * was still held as its wait ran out, the status link (AC28). Either way it has ended.
+     * The background POST was not refused: it got the same 200 body, or the status link if its
+     * wait ran out first.
      */
     @Then("the background submission got the same 200 body, or the status link if its wait ran out")
     fun theBackgroundSubmissionWasNotRefused() {
@@ -264,14 +264,14 @@ class TransactionSteps(
         }
     }
 
-    /** AC29: GET answers byte for byte what the POST answered with its 200. */
+    /** GET answers byte for byte what the POST answered with its 200. */
     @Then("the response body is exactly the POST's 200 body")
     fun theResponseBodyIsThePosts() {
         assertEquals(200, context.postResponse().statusCode(), context.postResponse().body())
         assertEquals(context.postResponse().body(), context.response().body())
     }
 
-    /** Q8: the same problem, field by field; only `instance`, the request's own path, differs. */
+    /** The same problem, field by field; only `instance`, the request's own path, differs. */
     @Then("the response is the same problem the POST got")
     fun theResponseIsThePostsProblem() {
         val post = context.postResponse()
@@ -290,7 +290,7 @@ class TransactionSteps(
         record(body, Http.postJson(feeEndpoint(), body))
     }
 
-    /** [response] is now the response the `the response …` steps check; the scenario's first POST is kept. */
+    /** Makes [response] the one the `the response …` steps check; the first POST is kept. */
     private fun record(body: String, response: HttpResponse<String>) {
         context.submittedBody = body
         context.response = response
@@ -317,7 +317,7 @@ class TransactionSteps(
         val POLL_INTERVAL: Duration = Duration.ofMillis(250)
         val POLL_LIMIT: Duration = Duration.ofSeconds(20)
 
-        /** Bounds the wait for a request sent at once or in the background (each is also bounded by Http's timeout). */
+        /** Bounds the wait for a concurrent or background request; Http's timeout bounds each too. */
         val CONCURRENT_LIMIT: Duration = Duration.ofSeconds(60)
 
         /** Floats as BigDecimal, so a comparison never goes through double. */

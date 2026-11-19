@@ -15,13 +15,14 @@ import tools.jackson.databind.JsonNode
 import java.time.Duration
 
 /**
- * The retry policy the durability guarantees rest on (plan task 6.1, AC23, R3), read back from the
- * Restate server through the admin API, so it shows what the server will do, not what the YAML says.
+ * The retry policy the durability guarantees rest on: a failing step after the charge must pause,
+ * never be killed. It is read back from the Restate server through the admin API, so it shows what
+ * the server will do, not what the YAML says.
  *
- * - `restate.components.FeeWorkflow.retry-policy` (the IT profile) takes effect: it reaches the
- *   server in the endpoint manifest as FeeWorkflow's service-level policy, and no handler overrides
- *   it. Its `on_max_attempts` is `Pause`; nothing anywhere is `Kill`.
- * - `max-attempts` counts the first attempt: with 5, a record that fails 4 times still lands on the
+ * - `restate.components.FeeWorkflow.retry-policy` (the IT profile) reaches the server as
+ *   FeeWorkflow's service-level policy, and no handler overrides it. Its `on_max_attempts` is
+ *   `Pause`. Nothing anywhere is `Kill`.
+ * - `max-attempts` counts the first attempt. With 5, a record that fails 4 times still lands on the
  *   5th attempt. `durability.feature` pins the other side: the 5th failure pauses the run.
  */
 @FeeIntegrationTest
@@ -45,7 +46,10 @@ class RetryPolicyIT {
         assertNoHandlerKills(service)
     }
 
-    /** FeeCharge keeps the server default (Pause after 70 attempts): a killed charge would fail the run after it. */
+    /**
+     * FeeCharge keeps the server default, Pause after 70 attempts. A killed charge would fail the
+     * run that called it.
+     */
     @Test
     fun `FeeCharge's effective retry policy pauses, never kills`() {
         val service = TestInfrastructure.admin.service("FeeCharge")

@@ -10,8 +10,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * The registry contract (requirements §4): every registered type, with no extra work per type,
- * keeps the rules a new entry could break. Adding a type to [DefaultFeeSchedule] adds it here.
+ * The registry contract: every registered type keeps the rules a new entry could break.
+ * Adding a type to [DefaultFeeSchedule] adds it here, with no extra test code.
  */
 class FeeScheduleContractTest {
 
@@ -20,7 +20,10 @@ class FeeScheduleContractTest {
     /** The registered assets whose asset type [type] allows. */
     private fun allowedAssets(type: TransactionType): List<Asset> = ASSETS.assets.filter { it.type in type.allowedAssetTypes }
 
-    /** Amounts across the whole range an amount may take in [asset]: its smallest unit up to 20 integer digits. */
+    /**
+     * Amounts across the whole range an amount may take in [asset], from its smallest unit up to
+     * 20 integer digits.
+     */
     private fun sampleAmounts(asset: Asset): List<BigDecimal> =
         listOf(
             BigDecimal.ONE.movePointLeft(asset.scale),
@@ -62,8 +65,8 @@ class FeeScheduleContractTest {
                 val raw = type.rule.compute(amount, asset)
                 assertTrue(raw.signum() >= 0) { "$label: ${raw.toPlainString()} for ${amount.toPlainString()} ${asset.code}" }
 
-                // Through the calculator: priced at the asset's scale, never more than the amount, or
-                // refused only because the fee is larger than the amount (AC13).
+                // Through the calculator: priced at the asset's scale and never more than the
+                // amount, or refused only because the fee is larger than the amount.
                 val money = Money(amount, asset)
                 when (val calculation = CALCULATOR.quote(money, label)) {
                     is FeeCalculation.Quoted -> {

@@ -12,11 +12,10 @@ import kotlin.io.path.readLines
 import kotlin.io.path.readText
 
 /**
- * Every acceptance criterion of `docs/requirements.md` has a tagged scenario (AC31, R-A5), or is
- * on [NOT_YET], the list of criteria a later slice will cover. The criteria are read from the
- * requirements themselves (each `- **ACn.**` line), so a criterion added there needs a scenario
- * here. The list only shrinks: a criterion that is both tagged and on the list fails, as does a
- * tag or a [NOT_YET] entry that names no criterion.
+ * Every acceptance criterion in `docs/requirements.md` has a tagged Cucumber scenario, or is on
+ * [NOT_YET]. The criteria are read from the requirements file, so a new one needs a scenario.
+ * A tag or a [NOT_YET] entry that names no criterion fails, and so does a criterion that is both
+ * tagged and on the list.
  */
 class TraceabilityTest {
 
@@ -28,7 +27,7 @@ class TraceabilityTest {
         AC_DEFINITION.findAll(REQUIREMENTS.readText()).map { it.groupValues[1].toInt() }.toSet()
     }
 
-    /** AC number → the scenarios tagged with it (a tag on the feature or an Examples block counts too). */
+    /** Criterion number → its tagged scenarios. A tag on the feature or an Examples block counts. */
     private val scenariosByAc: Map<Int, List<String>> by lazy {
         val found = mutableMapOf<Int, MutableList<String>>()
         features.forEach { file ->
@@ -55,7 +54,7 @@ class TraceabilityTest {
         assertTrue(features.isNotEmpty()) { "no .feature files under $FEATURES" }
     }
 
-    /** A parse that finds nothing, or skips a criterion, would make every other check here pass vacuously. */
+    /** Without this, a parse that finds nothing would let every other check pass vacuously. */
     @Test
     fun `the acceptance criteria were read from the requirements, numbered from 1 with no gap`() {
         assertTrue(allAcs.isNotEmpty()) { "no '- **ACn.**' line in $REQUIREMENTS" }
@@ -69,7 +68,7 @@ class TraceabilityTest {
         assertEquals(emptyList<Int>(), missing) { "acceptance criteria with no tagged scenario: ${missing.map { "AC$it" }}" }
     }
 
-    /** Slice 6 was the last: from here on, a new criterion arrives with its scenario. */
+    /** Every criterion is built, so a new one must arrive with its scenario. */
     @Test
     fun `NOT_YET is empty, every slice is built`() {
         assertEquals(emptySet<Int>(), NOT_YET)
@@ -102,12 +101,12 @@ class TraceabilityTest {
         val FEATURES: Path = BASE_DIR.resolve(Path.of("src", "test", "resources", "features"))
         val REQUIREMENTS: Path = BASE_DIR.resolve(Path.of("docs", "requirements.md"))
 
-        /** `- **AC12.** …`: the line that defines a criterion. */
+        /** The line that defines a criterion: `- **AC<n>.** …`. */
         val AC_DEFINITION = Regex("""^- \*\*AC(\d+)\.\*\*""", RegexOption.MULTILINE)
         val AC_TAG = Regex("""@AC(\d+)\b""")
         val SCENARIO = Regex("""^(Scenario|Scenario Outline|Example|Scenario Template):.*""")
 
-        /** Criteria a later slice covers (plan §6). Empty since slice 6: every criterion has a scenario. */
+        /** Criteria allowed to have no scenario yet. Empty: every criterion has one. */
         val NOT_YET: Set<Int> = emptySet()
     }
 }

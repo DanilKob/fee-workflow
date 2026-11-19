@@ -34,24 +34,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The fee workflow, one instance per `transaction_id`: lookup → calculate → charge → record.
+ * The fee workflow, one instance per `transaction_id`: lookup, calculate, charge, record.
  *
  * Every step is journaled, so a crash or a retry resumes where it stopped and never charges twice.
- * Only the steps before the charge may fail terminally, through [rejectBeforeCharge]; nothing
- * after the charge does (D2b, AC23): `record` retries until it succeeds, and Restate pauses the
- * invocation for an operator if it keeps failing.
+ * On replay the code outside the steps runs again and must take the same path. So anything
+ * non-deterministic (time, random ids, database calls) runs inside a step or comes from Restate's
+ * journaled clock and random.
  *
- * The input is not trusted: the API validated it, but anyone who can reach the Restate ingress can
- * send `run` directly. So `calculate` builds its transaction through [TransactionFactory], the
- * same checks the API's transaction passed (the id pattern, the amount's bounds, the labels and
- * the rules between them, the eligible state, `created_at`), then checks what only the workflow
- * can: the `transaction_id` is the workflow key, and the fingerprint is the payload's. A failed
- * check is a `rule_rejected` with a fixed detail, never the input echoed back.
+ * Only the steps before the charge may fail terminally, through [rejectBeforeCharge]. After the
+ * charge, a terminal failure would leave a charge with no record. So `record` retries until it
+ * succeeds, and Restate pauses the invocation for an operator if it keeps failing.
  *
- * The transaction comes from [TransactionFactory], the price from [FeeCalculationService] and the
- * fingerprint from [PayloadFingerprintService], all injected, the same beans the API uses. Postgres
- * is reached only through the [FeeRecordRepository] port, and only inside a step, under
- * [Dispatchers.IO].
+ * The input is not trusted, because anyone who can reach the Restate ingress can call `run`
+ * directly. So `calculate` repeats the API's checks, then checks that the id is the workflow key
+ * and the fingerprint matches the payload. A failed check gets a fixed detail, never the input.
  */
 @RestateComponent
 @Workflow
@@ -70,8 +66,8 @@ class FeeWorkflow(
         // 1. The fingerprint first, so status() can tell this payload from another at once.
         state().set(FINGERPRINT, input.fingerprint)
 
-        // 2. A record from an earlier run (after workflow retention) decides (AC19). It is looked up
-        // by the key, so an input naming another transaction_id can't return that one's record.
+        // 2. A record from an earlier run, after workflow retention, decides. It is read by the key,
+        // so an input naming another transaction_id can't return that one's record.
         val existing = runBlock("lookup") {
             LookupJournal(withContext(Dispatchers.IO) { records.find(key) }?.toJournal())
         }.stored
@@ -81,8 +77,8 @@ class FeeWorkflow(
             rejectBeforeCharge(conflict.httpStatus, conflict, RejectionReason.PAYLOAD_CONFLICT_DETAIL)
         }
 
-        // 3. The input checks and the rule run inside the step, so a replay reuses the journaled
-        // outcome and fee (AC22).
+        // 3. The checks and the rule run inside the step, so a replay reuses the journaled fee even
+        // if a rule has changed since.
         val quote = when (val calculation = runBlock("calculate") { calculate(input, key) }) {
             is CalculationJournal.Quoted -> calculation.quote
             is CalculationJournal.Rejected ->
@@ -106,14 +102,13 @@ class FeeWorkflow(
         return record.toOutput()
     }
 
-    /** The payload fingerprint and the stored rejection; null fields when none is stored. */
+    /** The stored fingerprint and rejection. A field is null until it is stored. */
     @Shared
     suspend fun status(): WorkflowStatus = WorkflowStatus(state().get(FINGERPRINT), state().get(REJECTION))
 
     /**
-     * The factory's checks and the rules, then the key, the price and the fingerprint. The
-     * fingerprint is compared only after the factory has passed the amount, since fingerprinting
-     * renders the amount in full and an unchecked exponent must never be expanded.
+     * The fingerprint is compared last, after the factory has checked the amount. Fingerprinting
+     * renders the amount in full, and an unchecked huge exponent must never be expanded.
      */
     private fun calculate(input: FeeWorkflowInput, key: String): CalculationJournal {
         val transaction = when (val creation = transactions.create(input.toTransactionInput())) {
@@ -130,14 +125,14 @@ class FeeWorkflow(
         return CalculationJournal.Quoted(quote.toJournal())
     }
 
-    /** `field: message` for each violation, the field in its snake_case wire name: fixed texts, no input echoed. */
+    /** `field: message` per violation, from fixed texts only, so no input is echoed. */
     private fun detailOf(violations: List<RuleViolation>): String =
         violations.joinToString("; ") { "${it.field.name.lowercase()}: ${it.message}" }
 
     /**
-     * Every pre-charge rejection goes through here: the rejection is stored first, outside any
-     * step, so `status()` answers the same problem later (Q8); then the tagged terminal failure
-     * ends the invocation.
+     * Every pre-charge rejection goes through here. The rejection is stored first, outside any
+     * step, so `status()` answers the same problem later. Then the tagged terminal failure ends
+     * the invocation.
      */
     private suspend fun rejectBeforeCharge(status: Int, reason: RejectionReason, detail: String): Nothing {
         state().set(REJECTION, Rejection(status, reason.wire, detail))
@@ -148,7 +143,7 @@ class FeeWorkflow(
         val FINGERPRINT = stateKey<String>("fingerprint")
         val REJECTION = stateKey<Rejection>("rejection")
 
-        // The workflow's own checks' fixed details: neither echoes the input.
+        // Fixed details, so neither echoes the input.
         const val ID_NOT_KEY = "transaction_id: must be the workflow key"
         const val FINGERPRINT_MISMATCH = "fingerprint: does not match the payload"
     }

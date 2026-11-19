@@ -31,9 +31,9 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * The orchestration of a fee request and of a lookup, against a scripted gateway and record store,
- * with the real fingerprint and failure-mapping services; the last tests swap each for a stub to
- * show the service asks the injected one.
+ * The fee request and lookup flows, against a scripted gateway and record store, with the real
+ * fingerprint and failure-mapping services. The last tests swap each service for a stub, to show
+ * the injected one is used.
  */
 class FeeServiceImplTest {
 
@@ -167,7 +167,7 @@ class FeeServiceImplTest {
         }
     }
 
-    /** Plan §3 step 4.2: the status is read before anything waits. */
+    /** The status is read before anything waits. */
     @Test
     fun `a duplicate whose run stored another payload's fingerprint is a payload conflict at once, with no wait`() = runTest {
         val gateway = FakeGateway(SendResult.Duplicate, OutputResult.Ready(result, fingerprint), StatusResult.Known(RunStatus(otherFingerprint)))
@@ -177,7 +177,7 @@ class FeeServiceImplTest {
         assertEquals(emptyList<Any>(), gateway.awaited)
     }
 
-    /** Q8: the same problem the first POST got, without waiting for a run that has already ended. */
+    /** The same problem the first POST got, without waiting for a run that has already ended. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("storedRejections")
     fun `a duplicate whose run stored this payload's rejection gets that rejection at once, with no wait`(stored: RunRejection) = runTest {
@@ -195,7 +195,7 @@ class FeeServiceImplTest {
         assertEquals(emptyList<Any>(), gateway.awaited)
     }
 
-    // A duplicate whose run stored this payload's fingerprint: the run is this payload's (AC16).
+    // A duplicate whose run stored this payload's fingerprint: the run is this payload's, so wait.
 
     @Test
     fun `a duplicate of this payload's run waits for it and gets its result (AC16)`() = runTest {
@@ -224,7 +224,7 @@ class FeeServiceImplTest {
         }
     }
 
-    /** Q7: the fee rules refused this payload after its run started. */
+    /** The fee rules refused this payload after its run started. */
     @Test
     fun `a duplicate of this payload's run that ends rule_rejected is that rejection (a 400)`() = runTest {
         val detail = "amount: the fee is larger than the amount"
@@ -238,7 +238,10 @@ class FeeServiceImplTest {
         assertEquals(400, RejectionReason.RULE_REJECTED.httpStatus)
     }
 
-    /** Plan §3 step 6: Restate's cancel and kill also end with 409, so an untagged failure is never a conflict. */
+    /**
+     * Restate's cancel and kill also end with 409, so an untagged failure is never a payload
+     * conflict.
+     */
     @Test
     fun `a duplicate's run that ended with an untagged failure is a 500, never a 409`() = runTest {
         listOf(RunStatus(fingerprint), RunStatus()).forEach { stored ->
@@ -252,7 +255,7 @@ class FeeServiceImplTest {
         }
     }
 
-    // A duplicate whose run has stored no fingerprint yet: wait, then check the payload (step 4.2, 4.3).
+    // A duplicate whose run has stored no fingerprint yet: wait, then check the payload.
 
     @Test
     fun `a duplicate of a run with no fingerprint yet waits, and the output's fingerprint decides`() = runTest {
@@ -265,7 +268,6 @@ class FeeServiceImplTest {
         }
     }
 
-    /** The plan's own example: status null before the wait, fp(B) at the deadline. */
     @Test
     fun `a duplicate of a run with no fingerprint yet that shows another payload's at the deadline is a payload conflict`() = runTest {
         val gateway = FakeGateway(
@@ -280,7 +282,7 @@ class FeeServiceImplTest {
         assertEquals(1, gateway.awaited.size)
     }
 
-    /** Plan §3 step 4.3: a payload that hasn't been checked never gets a 202. */
+    /** A payload that hasn't been checked never gets a 202. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("rechecks")
     fun `a duplicate of a run with no fingerprint yet, still going at the deadline, is decided by the status read again`(
@@ -354,7 +356,7 @@ class FeeServiceImplTest {
         assertEquals(emptyList<Any>(), gateway.awaited)
     }
 
-    // --- cancellation (KS-R2) ---
+    // --- cancellation: a CancellationException is rethrown, never mapped ---
 
     @Test
     fun `a cancellation is rethrown, never mapped to an answer`() = runTest {
@@ -367,7 +369,9 @@ class FeeServiceImplTest {
         assertThrows<CancellationException> { service(FakeGateway(SendResult.Accepted, cancelOutput = cancelled)).chargeFee(transaction) }
     }
 
-    /** Only the store being unavailable is a 503; anything else is a bug, and stays the catch-all's 500. */
+    /**
+     * Only an unavailable store is a 503. Anything else is a bug, and stays the catch-all's 500.
+     */
     @Test
     fun `a record lookup failure that isn't a data access failure is not mapped`() = runTest {
         assertThrows<IllegalStateException> {
@@ -399,7 +403,7 @@ class FeeServiceImplTest {
             override fun recordLookupFailed(): Outcome.Unavailable = Outcome.Unavailable(Unavailability.NOT_STARTED_YET)
         }
 
-        // The real mapping makes a refused send a 503; this one says 202, and the service follows it.
+        // The real mapping makes a refused send a 503. This one says 202, and the service obeys.
         val refused = service(FakeGateway(SendResult.Failed(GatewayFailure.Unreachable)), failureMapping = mapping).chargeFee(transaction)
         val lookup = service(FakeGateway(), FakeRecords(failure = DataAccessResourceFailureException("down")), failureMapping = mapping).lookUpFee("txn_001")
 
@@ -434,7 +438,7 @@ class FeeServiceImplTest {
             return output ?: error("a wait, but no output was scripted")
         }
 
-        /** The first read answers [status], the second [reread]; a third read fails the test. */
+        /** The first read answers [status] and the second [reread]. A third read fails the test. */
         override suspend fun status(transactionId: String): StatusResult {
             statusRead += transactionId
             return when (statusRead.size) {

@@ -9,8 +9,8 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.toJavaInstant
 
 /**
- * Now, as a UTC local date-time at the microsecond precision of `timestamp(6)`. The instant comes
- * from `Clock.Restate`, which journals it, so a replay sees the same value (AC22).
+ * Now, as a UTC local date-time at the microsecond precision of `timestamp(6)`. `Clock.Restate`
+ * journals the instant, so a replay sees the same value.
  */
 @OptIn(ExperimentalTime::class)
 internal suspend fun restateNowUtc(): LocalDateTime =

@@ -47,10 +47,9 @@ import java.util.UUID
 import kotlin.time.Duration as KotlinDuration
 
 /**
- * The HTTP edges, through Spring MVC (standalone MockMvc: the real controller, service, validation
- * service, exception handler and JSON mapping) over a scripted gateway and record store: status
- * codes, headers, problem bodies, and what is or isn't queried. One test swaps the validation
- * service for a stub, to show the controller asks the injected one.
+ * The HTTP edges through standalone MockMvc: the real controller, service, validation, exception
+ * handler and JSON mapping, over a scripted gateway and record store.
+ * One test swaps in a stub validation service, to show the controller uses the injected one.
  */
 class FeeControllerTest {
 
@@ -119,7 +118,7 @@ class FeeControllerTest {
         assertEquals(0, gateway.awaited)
     }
 
-    // --- POST, a duplicate (plan §3 step 4 and step 6) ---
+    // --- POST, a duplicate ---
 
     @Test
     fun `a duplicate whose run stored another payload's fingerprint is a 409 problem, and nothing waits (AC18)`() {
@@ -134,7 +133,7 @@ class FeeControllerTest {
         assertEquals(0, gateway.awaited)
     }
 
-    /** Q8: a resend of a payload the run rejected gets the same 4xx problem, at once. */
+    /** A resend of a payload the run rejected gets the same 4xx problem at once. */
     @Test
     fun `a duplicate whose run stored this payload's rejection is that problem, and nothing waits`() {
         val stored = RunRejection(400, RejectionReason.RULE_REJECTED, "amount: the fee is larger than the amount")
@@ -165,7 +164,7 @@ class FeeControllerTest {
         assertEquals(detail, result.problem().get("detail").asString())
     }
 
-    /** Restate's cancel and kill end with 409 too; with no tag, that is a 500, never a payload conflict. */
+    /** Restate's cancel and kill also answer 409. Without a tag that is a 500, never a conflict. */
     @Test
     fun `a duplicate's run that ended with an untagged 409 (a cancel) is a 500 problem, never a 409`() {
         val gateway = FakeGateway(
@@ -379,7 +378,7 @@ class FeeControllerTest {
         fingerprint = "a".repeat(64),
     )
 
-    /** Answers with the scripted results; a call with none scripted fails the request (and the test). */
+    /** Answers with the scripted results. An unscripted call fails the request, and the test. */
     private class FakeGateway(
         private val send: SendResult? = null,
         private val output: (fingerprint: String) -> OutputResult = { error("a wait, but no output was scripted") },

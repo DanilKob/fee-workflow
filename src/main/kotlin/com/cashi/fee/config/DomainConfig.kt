@@ -16,10 +16,8 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 /**
- * Wires the Spring-free domain: every domain bean is built here, and the domain itself carries no
- * Spring annotation (Q14). The schedule is validated against the asset registry while its bean is
- * built, so a malformed schedule stops the application at startup (D5). The transaction factory
- * (Q19) builds on the registry and the calculation service's rules.
+ * Builds every domain bean here, so the domain itself needs no Spring annotation. The schedule is
+ * validated while its bean is built, so a malformed schedule stops the application at startup.
  */
 @Configuration(proxyBeanMethods = false)
 class DomainConfig {

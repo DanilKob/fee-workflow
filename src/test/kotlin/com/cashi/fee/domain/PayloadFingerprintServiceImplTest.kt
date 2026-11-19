@@ -11,7 +11,10 @@ class PayloadFingerprintServiceImplTest {
 
     private val usd = Asset("USD", AssetType.FIAT, 2)
 
-    /** Built directly, not through the factory: some copies below are transactions no factory would build. */
+    /**
+     * Built directly, not through the factory, because some copies below are transactions no
+     * factory would build.
+     */
     private val sample = Transaction(
         transactionId = "txn_001",
         amount = Money(BigDecimal("1000"), usd),

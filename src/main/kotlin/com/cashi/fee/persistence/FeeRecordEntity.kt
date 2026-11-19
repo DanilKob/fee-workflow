@@ -13,12 +13,11 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 /**
- * One `fee_record` row (V1 migration). A plain class with an assigned id and deliberately no
- * `@Version` and no `Persistable`: `save` then merges, so the `record` step replays cleanly after
- * a commit whose journal entry was lost. Either one would turn that replay into a duplicate-key
- * loop that ends paused.
+ * One `fee_record` row. It deliberately has no `@Version` and no `Persistable`, so `save` with the
+ * assigned id merges. The `record` step then replays cleanly after a commit whose journal entry was
+ * lost. Either one would turn that replay into a duplicate-key loop that ends paused.
  *
- * The `LocalDateTime` fields carry no zone: every value is UTC (D8).
+ * The `LocalDateTime` fields carry no zone: every value is UTC.
  */
 @Entity
 @Table(name = "fee_record")

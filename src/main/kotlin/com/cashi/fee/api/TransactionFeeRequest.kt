@@ -6,13 +6,11 @@ import tools.jackson.databind.JsonNode
 import java.math.BigDecimal
 
 /**
- * The raw `POST /transaction/fee` body, snake_case on the wire. Every field is a nullable
- * [JsonNode], so binding never fails on a field: the validator tells a missing or `null` field from
- * one of the wrong JSON type (a string `amount`, a numeric `transaction_id`) and lists every one of
- * them at once (AC27). Only a body that isn't a JSON object fails to bind.
+ * The raw `POST /transaction/fee` body. Every field is a nullable [JsonNode], so binding never fails
+ * on a field. The validator can then list a missing field and a wrong JSON type (a string `amount`)
+ * together. Only a body that isn't a JSON object fails to bind.
  *
- * The `@Schema` annotations give the OpenAPI document the JSON type each field must have, which
- * the `JsonNode` type can't say.
+ * `@Schema` tells the OpenAPI document each field's JSON type, which `JsonNode` can't.
  */
 data class TransactionFeeRequest(
     @field:Schema(

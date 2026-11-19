@@ -2,19 +2,17 @@ package com.cashi.fee.service
 
 /**
  * Why the fee workflow refused a transaction, as its terminal failures are tagged. Restate's own
- * cancel and kill also end an invocation with code 409, so a 409 is never chosen by status code
- * alone: the tag decides (plan §3 step 6).
+ * cancel and kill also end with code 409, so the tag decides, never the status code alone.
  *
- * [wire] is the tag as it travels in the failure's `reason` metadata and in workflow state. It is
- * a compatibility contract with paused invocations and stored state: never change one.
- * [httpStatus] is the status both the terminal failure and the API's problem carry.
+ * Never change a [wire] tag: paused invocations and stored workflow state already hold them.
+ * [httpStatus] is carried by both the terminal failure and the API's problem.
  */
 enum class RejectionReason(val wire: String, val httpStatus: Int) {
 
-    /** The `transaction_id` was already used with a different payload (D7). */
+    /** The `transaction_id` was already used with a different payload. */
     PAYLOAD_CONFLICT("payload_conflict", 409),
 
-    /** The fee rules refused the transaction after the workflow started (Q7). */
+    /** The fee rules refused the transaction after the workflow started. */
     RULE_REJECTED("rule_rejected", 400),
     ;
 

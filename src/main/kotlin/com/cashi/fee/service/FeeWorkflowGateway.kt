@@ -5,9 +5,8 @@ import com.cashi.fee.domain.Transaction
 import kotlin.time.Duration
 
 /**
- * The service's view of the fee workflow: send a run, wait for its output, read its status. It
- * speaks service and domain types only; the adapter maps them to and from the workflow's journal
- * types. Every outcome is a value; only a cancellation propagates as an exception.
+ * The service's view of the fee workflow, in service and domain types only. Every outcome is a
+ * value. Only a cancellation propagates as an exception.
  */
 interface FeeWorkflowGateway {
 
@@ -15,9 +14,8 @@ interface FeeWorkflowGateway {
     suspend fun send(transaction: Transaction, fingerprint: String): SendResult
 
     /**
-     * Polls the workflow's output until it is ready, has failed, or [deadline] has passed
-     * ([OutputResult.Pending]). It never attaches, so nothing on the server is held open: the
-     * deadline, like cancelling the calling coroutine, stops the polling and nothing else.
+     * Polls the workflow's output until it is ready, has failed, or [deadline] has passed. It never
+     * attaches, so nothing is held open on the server. The deadline only stops the polling.
      */
     suspend fun awaitOutput(transactionId: String, deadline: Duration): OutputResult
 
@@ -53,13 +51,13 @@ interface FeeWorkflowGateway {
         /** The run's result, with the fingerprint of the payload that run was started with. */
         data class Ready(val result: FeeResult, val fingerprint: String) : OutputResult
 
-        /** The run ended with a tagged rejection; [status] is the status it ended with. */
+        /** The run ended with a tagged rejection and this [status]. */
         data class Rejected(val status: Int, val reason: RejectionReason, val detail: String) : OutputResult
 
         /** The output could not be read, or the run ended with an untagged failure. */
         data class Failed(val failure: GatewayFailure) : OutputResult
 
-        /** The deadline passed before the output was ready; the run, if any, keeps going. */
+        /** The deadline passed before the output was ready. The run, if any, keeps going. */
         data object Pending : OutputResult
     }
 
@@ -70,9 +68,9 @@ interface FeeWorkflowGateway {
         data class Failed(val failure: GatewayFailure) : StatusResult
     }
 
-    /** What a run has stored so far: its payload fingerprint and its rejection; null when none. */
+    /** What a run has stored so far. A field is null until it is stored. */
     data class RunStatus(val fingerprint: String? = null, val rejection: RunRejection? = null)
 
-    /** A pre-charge rejection the run stored, so later reads answer the same problem (Q8). */
+    /** A pre-charge rejection the run stored, so later reads answer the same problem. */
     data class RunRejection(val status: Int, val reason: RejectionReason, val detail: String)
 }

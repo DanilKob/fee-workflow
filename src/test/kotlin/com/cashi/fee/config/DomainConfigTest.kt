@@ -16,10 +16,8 @@ import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 
 /**
- * Every domain bean is built here, in order: the asset registry, the validation service over it,
- * the schedule validated by it, then the calculation and fingerprint services, and the transaction
- * factory over the registry and the calculation service. The schedule is validated while its bean
- * is built, so a schedule that could misprice stops startup (D5).
+ * Every domain bean is built here, each after the beans it needs. The schedule is validated while
+ * its bean is built, so a schedule that could misprice stops startup.
  */
 class DomainConfigTest {
 

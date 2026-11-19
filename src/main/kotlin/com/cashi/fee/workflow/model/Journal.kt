@@ -9,12 +9,12 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 // The types that cross the Restate journal and its state. Money is a JSON string, times are ISO
-// strings. Their JSON shape is a compatibility contract: a paused invocation replays the journal
-// written by an older deployment, and FeeCharge keeps its state indefinitely. Add fields only
-// with defaults; never rename or remove one.
+// strings. Their JSON shape must stay compatible: a paused invocation replays a journal written by
+// an older deployment, and FeeCharge keeps its state forever. Add fields only with defaults, and
+// never rename or remove one.
 //
-// Every type pins its serial name with @SerialName, and every sealed subtype its discriminator,
-// so renaming a Kotlin class never changes what is written. Never change a serial name.
+// Each type and sealed subtype pins its serial name, so renaming a Kotlin class never changes what
+// is written. Never change a serial name.
 
 /** The validated request, as the workflow's input. The fingerprint is computed by the service. */
 @Serializable
@@ -64,7 +64,7 @@ sealed interface CalculationJournal {
 @SerialName("ChargeRequest")
 data class ChargeRequest(val fee: BigDecimal, val asset: String, val fingerprint: String)
 
-/** A charge, as FeeCharge keeps it in its state forever (AC25). */
+/** A charge, as FeeCharge keeps it in its state forever. */
 @Serializable
 @SerialName("Charge")
 data class Charge(
@@ -97,8 +97,8 @@ data class RecordJournal(
 )
 
 /**
- * A pre-charge rejection, kept in workflow state so later reads answer the same problem (Q8).
- * [reason] is the wire tag of a `RejectionReason`.
+ * A pre-charge rejection, kept in workflow state so later reads answer the same problem. [reason]
+ * is the wire tag of a `RejectionReason`.
  */
 @Serializable
 @SerialName("Rejection")
@@ -109,7 +109,7 @@ data class Rejection(val status: Int, val reason: String, val detail: String)
 @SerialName("WorkflowStatus")
 data class WorkflowStatus(val fingerprint: String? = null, val rejection: Rejection? = null)
 
-/** The workflow's output: the 200 body's fields, plus the fingerprint the service compares and strips. */
+/** The 200 body's fields, plus the fingerprint the service compares and then strips. */
 @Serializable
 @SerialName("FeeWorkflowOutput")
 data class FeeWorkflowOutput(

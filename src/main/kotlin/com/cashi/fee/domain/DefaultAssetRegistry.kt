@@ -1,9 +1,6 @@
 package com.cashi.fee.domain
 
-/**
- * The registry this service ships: the AC9 table, fiat and crypto (D-assets). A test may hand it
- * other [assets]; their codes must be unique.
- */
+/** The shipped fiat and crypto assets. A test may pass other [assets], with unique codes. */
 class DefaultAssetRegistry(assets: Collection<Asset> = SHIPPED) : AssetRegistry {
 
     private val byCode: Map<String, Asset> = assets.associateBy { it.code }

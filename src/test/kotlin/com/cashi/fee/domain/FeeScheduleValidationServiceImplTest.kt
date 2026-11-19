@@ -10,9 +10,9 @@ import org.junit.jupiter.params.provider.ValueSource
 import java.math.BigDecimal
 
 /**
- * Startup validation (D5, requirements §4): a malformed schedule fails while it is built, before it
- * can price anything. A rule checks itself when it is built; [FeeScheduleValidationServiceImpl]
- * checks what needs the asset registry or the whole schedule.
+ * Startup validation: a malformed schedule fails while it is built, before it can price anything.
+ * A rule checks itself when it is built. [FeeScheduleValidationServiceImpl] checks what needs the
+ * asset registry or the whole schedule.
  */
 class FeeScheduleValidationServiceImplTest {
 
@@ -71,7 +71,10 @@ class FeeScheduleValidationServiceImplTest {
         assertTrue("fixed fee of 0.5 JPY has more decimals than JPY allows (0)" in failure.message!!) { failure.message }
     }
 
-    /** A fee is charged as Money in its asset, so a fixed fee past Money's integer digits could never be quoted. */
+    /**
+     * A fee is charged as Money in its asset, so a fixed fee past Money's integer digits could
+     * never be quoted.
+     */
     @Test
     fun `a fixed fee with more integer digits than money holds fails`() {
         val failure = assertThrows<IllegalArgumentException> {

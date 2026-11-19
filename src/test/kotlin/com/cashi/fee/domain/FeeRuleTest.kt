@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 
-/** Each fee kind computes, rates and describes itself (requirements §4); rounding is the calculator's. */
+/** Each fee kind computes, rates and describes itself. Rounding is the calculator's job. */
 class FeeRuleTest {
 
     private val usd = Asset("USD", AssetType.FIAT, 2)
@@ -38,7 +38,7 @@ class FeeRuleTest {
         assertEquals(0, BigDecimal("0.50").compareTo(rule.compute(BigDecimal("99999999999999999999.99"), usd)))
         assertEquals(BigDecimal("75"), rule.compute(BigDecimal("1000"), jpy))
         assertEquals(0, rule.nominalRate().signum())
-        // "0.5" configured, "0.50" described: the fee is written at its asset's scale (AC14).
+        // "0.5" configured, "0.50" described: the fee is written at its asset's scale.
         assertEquals("Flat fee of 0.50 USD", rule.describe(usd))
         assertEquals("Flat fee of 75 JPY", rule.describe(jpy))
     }

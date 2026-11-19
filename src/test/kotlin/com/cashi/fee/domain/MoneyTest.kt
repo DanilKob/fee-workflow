@@ -12,8 +12,8 @@ import java.math.BigDecimal
 import java.time.Duration
 
 /**
- * The money value object (Q18): its invariants, the number rendering rule of AC3
- * (`stripTrailingZeros().toPlainString()`), the one rounding, and the bound checks that never expand
+ * The money value object: its invariants, its plain number rendering
+ * (`stripTrailingZeros().toPlainString()`), the one rounding, and bound checks that never expand
  * an exponent.
  */
 class MoneyTest {
@@ -21,7 +21,7 @@ class MoneyTest {
     @ParameterizedTest(name = "{0} -> {1}")
     @CsvSource(
         "1000, 1000",
-        "1000.00, 1000", // Q10: the same number, rendered by AC3's rule
+        "1000.00, 1000", // the same number, rendered plain
         "1E+3, 1000", // never 1E+3
         "1.50, 1.5", // never 1.50
         "0.0015, 0.0015", // never 1.5E-3
@@ -70,7 +70,7 @@ class MoneyTest {
     @ParameterizedTest(name = "{0} has more than {1} decimals: {2}")
     @CsvSource(
         "10.00, 2, false",
-        "10.000, 2, false", // trailing zeros don't count (Q13)
+        "10.000, 2, false", // trailing zeros don't count
         "10.001, 2, true",
         "0.01, 2, false",
         "0.001, 2, true", // the first significant digit is past the scale
@@ -123,11 +123,11 @@ class MoneyTest {
     @ParameterizedTest(name = "{0} {1}")
     @CsvSource(
         "99999999999999999999.99, USD",
-        "10.000, USD", // trailing zeros don't count (Q13)
+        "10.000, USD", // trailing zeros don't count
         "1000.0, JPY",
         "0.12345678, BTC",
         "1.234567890123456789, ETH",
-        "0, USD", // a fee that rounds to zero is still money (Q3)
+        "0, USD", // a fee that rounds to zero is still money
     )
     fun `an amount within its asset's bounds is money`(value: String, asset: String) {
         assertNull(Money.check(BigDecimal(value), asset(asset)))
@@ -158,7 +158,10 @@ class MoneyTest {
         assertNull(Money.checkBounds(BigDecimal(value)))
     }
 
-    /** D9: once, HALF_UP, at the asset's scale; the AC10 cases where HALF_EVEN or a Double would differ. */
+    /**
+     * Rounded once, half-up, at the asset's scale.
+     * These are the cases where half-even or a Double would give another fee.
+     */
     @ParameterizedTest(name = "{0} {1} -> {2}")
     @CsvSource(
         "0.015, USD, 0.02",

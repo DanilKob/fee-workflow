@@ -24,7 +24,7 @@ object Observations {
 
     /**
      * Every invocation Restate knows for the key [transactionId], of any service (FeeWorkflow,
-     * FeeCharge), as `Service/handler status`. Empty when nothing was ever started for it (AC26).
+     * FeeCharge), as `Service/handler status`. Empty when nothing was ever started for it.
      */
     fun invocations(transactionId: String): List<String> =
         TestInfrastructure.admin

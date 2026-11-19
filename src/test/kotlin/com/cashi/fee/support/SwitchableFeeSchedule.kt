@@ -11,13 +11,12 @@ import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Test-only: the [FeeSchedule] every bean of the shared IT context gets (`@Primary`), so the
- * `FeeCalculationService` that the validator and the workflow's `calculate` step both use can be handed
- * other rules mid-flight, as a redeploy with an edited schedule would (AC22, R13).
+ * Test-only [FeeSchedule] whose rules a scenario can swap mid-flight, as a redeploy with an edited
+ * schedule would. It is `@Primary`, so the validator and the workflow's `calculate` step both see it.
  *
- * It holds the shipped rules ([DefaultFeeSchedule]) unless a scenario [switchTo]s another schedule,
- * validated like the shipped one. Cucumber [reset]s it before and after every scenario, so no other
- * scenario or IT ever sees the switched rules.
+ * It holds the shipped rules until a scenario calls [switchTo], which validates the new rules like
+ * the shipped ones. Cucumber calls [reset] before and after every scenario, so no other test sees
+ * the switched rules.
  */
 @Component
 @Primary

@@ -12,13 +12,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Test-only: the [FeeRecordRepository] every bean of the shared IT context gets (`@Primary`), a
- * decorator over the real [JpaFeeRecordRepository] that can make `save` slow or failing (plan §4).
+ * Test-only decorator over the real [JpaFeeRecordRepository] that can make `save` slow or fail.
+ * It is `@Primary`, so every bean of the shared IT context gets it.
  *
- * Faults are keyed by `transaction_id` and apply to `save` only, so a run left over from another
- * scenario can't use up a scenario's faults. Each armed fault fires once per save it affects, and
- * [fired] counts them, so a scenario can assert that what it armed is what happened. Cucumber
- * [reset]s it before every scenario. With nothing armed it only delegates.
+ * Faults are keyed by `transaction_id`, so a run left over from another scenario can't use up this
+ * scenario's faults. [fired] counts the faults that fired, so a scenario can check that what it
+ * armed is what happened. With nothing armed it only delegates.
  */
 @Component
 @Primary
@@ -63,7 +62,7 @@ class ControllableFeeRecordRepository(private val delegate: JpaFeeRecordReposito
         }
     }
 
-    /** The next [times] saves for [transactionId] commit, then throw, as a lost commit acknowledgement would. */
+    /** The next [times] saves for [transactionId] commit, then throw, like a lost commit ack. */
     fun failAfterSave(transactionId: String, times: Int) {
         faultsOf(transactionId).failAfter.set(times)
     }

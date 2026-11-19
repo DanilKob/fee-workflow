@@ -4,13 +4,12 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 /**
- * A valid fee request: every field present and in range, its asset known and agreeing with its
- * asset type, its type registered and allowing that asset type. Labels hold the registry spelling
- * (Q11). [createdAt] is a UTC local date-time with microseconds (D8).
+ * A valid fee request: every field present and in range, the asset known and matching its asset
+ * type, and the type registered and allowing it. [createdAt] is a UTC local date-time.
  *
- * Only the domain builds one, through [TransactionFactory] (Q19): the constructor and `copy` are
- * internal, and `ArchitectureTest` checks that nothing outside `domain` calls either, so no other
- * layer can hold a transaction that skipped the checks.
+ * Only [TransactionFactory] builds one. The constructor and `copy` are internal, and
+ * `ArchitectureTest` checks that nothing outside `domain` calls them, so no transaction skips the
+ * checks.
  */
 @ConsistentCopyVisibility
 data class Transaction internal constructor(
@@ -21,17 +20,16 @@ data class Transaction internal constructor(
     val state: String,
     val createdAt: LocalDateTime,
 ) {
-    /** The asset's code: the amount's own asset. */
+    /** The amount's asset code. */
     val asset: String get() = amount.asset.code
 
     companion object {
-        /** The only input state eligible for a fee (D-state). */
+        /** The only input state eligible for a fee. */
         const val ELIGIBLE_STATE: String = "SETTLED - PENDING FEE"
 
         /**
-         * What a `transaction_id` may be: 1 to 64 of A-Z, a-z, 0-9, `_` and `-`. The 64 is the
-         * `fee_record` key's `varchar(64)`. Every check of an id, in a body, in a path or in a
-         * workflow input, goes through [checkId].
+         * 1 to 64 of A-Z, a-z, 0-9, `_` and `-`, to fit the `varchar(64)` key of `fee_record`.
+         * Every id check, in a body, a path or a workflow input, goes through [checkId].
          */
         val ID_PATTERN: Regex = Regex("[A-Za-z0-9_-]{1,64}")
 
@@ -39,9 +37,8 @@ data class Transaction internal constructor(
         const val ID_RULE: String = "must be 1 to 64 characters of A-Z, a-z, 0-9, _ or -"
 
         /**
-         * The id rule alone, without throwing: null for an id that fits [ID_PATTERN], otherwise why
-         * not, on `transaction_id` (blank is missing). [TransactionFactory] runs it on a body's id,
-         * and the API on the id in the path of `GET /transaction/{id}/fee`.
+         * Why [transactionId] breaks the id rule, or null if it fits. A blank id counts as missing.
+         * Used for a body's id and for the id in the `GET /transaction/{id}/fee` path.
          */
         fun checkId(transactionId: String): RuleViolation? =
             when {

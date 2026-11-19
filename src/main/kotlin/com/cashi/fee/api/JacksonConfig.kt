@@ -12,13 +12,12 @@ import tools.jackson.databind.json.JsonMapper
 import com.fasterxml.jackson.databind.PropertyNamingStrategies as Jackson2PropertyNamingStrategies
 
 /**
- * The HTTP JSON contract, on the Jackson 3 `JsonMapper` Spring MVC uses (Boot 4; Restate keeps its
- * own Jackson 2): snake_case keys (AC2), JSON floats read as `BigDecimal` so nothing passes
- * through `double` (AC8), and `BigDecimal` written in plain form, never `1E+3` (AC3).
+ * The HTTP JSON contract: snake_case keys, JSON floats read as `BigDecimal` so nothing passes
+ * through `double`, and `BigDecimal` written in plain form, never `1E+3`. It configures Spring's
+ * Jackson 3 `JsonMapper`; Restate uses its own Jackson 2.
  *
- * The OpenAPI document (springdoc) reads the DTOs through swagger-core's own Jackson 2 mapper, which
- * knows nothing of the one above; [openApiSnakeCase] gives it the same snake_case naming, so the
- * documented schemas name the keys the API really sends.
+ * Springdoc reads the DTOs through swagger-core's separate Jackson 2 mapper. [openApiSnakeCase]
+ * gives it the same naming, so the documented schemas match the keys the API sends.
  */
 @Configuration(proxyBeanMethods = false)
 class JacksonConfig {

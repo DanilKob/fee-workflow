@@ -23,7 +23,7 @@ import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException
 import java.net.URI
 
-/** Each failure becomes the problem the API promises, with the status the rejection reason carries. */
+/** Each failure becomes the promised problem body, with the status its rejection reason carries. */
 class ApiExceptionHandlerTest {
 
     private val handler = ApiExceptionHandler()
@@ -131,7 +131,7 @@ class ApiExceptionHandlerTest {
         assertTrue(logs.single().formattedMessage.contains("transaction_id=txn_001 phase=AWAIT_OUTPUT")) { logs.single().formattedMessage }
     }
 
-    /** Slice 1 advisory: the async timeout is logged once with the id and phase, in the /problems shape. */
+    /** An async timeout is logged once with the id and phase, and answers a /problems body. */
     @Test
     fun `a request that timed out is a 503 problem with Retry-After, logged once with the id and phase`() {
         var response: org.springframework.http.ResponseEntity<Any>? = null

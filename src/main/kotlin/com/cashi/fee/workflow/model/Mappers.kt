@@ -11,20 +11,18 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 // Mappers between the journal types and the domain. Every runBlock result is a journal type, so
-// the domain stays free of serialization concerns. Money is a value object in the domain and a
-// BigDecimal plus an asset code here, as in the read model and the database (Q18): the journal's
-// JSON shape doesn't change.
+// the domain stays free of serialization. Money is a value object in the domain but a BigDecimal
+// plus an asset code here, so the journal's JSON shape doesn't change.
 
 /** The amount crosses as the BigDecimal it was sent as, scale included. */
 fun Transaction.toWorkflowInput(fingerprint: String): FeeWorkflowInput =
     FeeWorkflowInput(transactionId, amount.amount, asset, assetType.name, type, state, createdAt, fingerprint)
 
 /**
- * This input's fields, unchecked, for [com.cashi.fee.domain.TransactionFactory]: the workflow
- * doesn't trust its input (a direct ingress call skips the API's checks), so it builds its
- * transaction the way the API does, and a bad input ends in a rejection, never in a step that
- * throws and retries forever. `created_at` goes in the one format the factory reads; a year that
- * format can't write (outside 0001–9999) goes in as an empty string, which the factory refuses.
+ * The input's fields, unchecked, for [com.cashi.fee.domain.TransactionFactory]. A direct ingress
+ * call skips the API's checks, so a bad input must end in a rejection, never in a step that throws
+ * and retries forever. A year outside 0001–9999 goes in as an empty string, which the factory
+ * refuses.
  */
 fun FeeWorkflowInput.toTransactionInput(): TransactionInput =
     TransactionInput(transactionId, amount, asset, assetType, type, state, DateFormatter.formatOrNull(createdAt).orEmpty())
@@ -71,9 +69,8 @@ fun RecordJournal.toDomain(): FeeRecord =
     )
 
 /**
- * The record the `record` step writes: the request, the journaled quote, and the charge as
- * FeeCharge returned it. Fee and asset come from the charge, so the record always matches what
- * was charged (Q9).
+ * Fee and asset come from the charge, not the quote, so the record always matches what was
+ * charged, even if a rule change has moved the fee since.
  */
 fun recordJournal(input: FeeWorkflowInput, quote: QuoteJournal, charge: Charge, recordedAt: LocalDateTime): RecordJournal =
     RecordJournal(

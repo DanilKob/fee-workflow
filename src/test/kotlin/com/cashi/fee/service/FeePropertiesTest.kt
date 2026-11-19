@@ -10,7 +10,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Configuration
 import java.time.Duration
 
-/** `fees.*` binds as configured and refuses a value that can't be a wait (KS-C3). */
+/** `fees.*` binds as configured and refuses a value that can't be a wait. */
 class FeePropertiesTest {
 
     @Configuration(proxyBeanMethods = false)

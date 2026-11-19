@@ -57,42 +57,19 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * The package table of the plan (§2), enforced: each package is a layer that may use only the
- * layers listed for it (`api → service → domain`, `workflow → service, domain`,
- * `persistence → domain`), and the domain depends on nothing but the JDK and the Kotlin stdlib.
+ * Architecture rules on the production classes:
+ * - each package uses only the packages it may (`api → service → domain`,
+ *   `workflow → service, domain`, `persistence → domain`), and the domain uses only the JDK and
+ *   the Kotlin stdlib;
+ * - no `Double` or `Float` on the money path, so no amount loses a digit;
+ * - the workflow stays replay-safe: no wall clock or random id, no terminal failure after the
+ *   charge, database calls only inside a step, one writer of `fee_record`;
+ * - only the gateway talks to the Restate client, and nothing waits by attaching;
+ * - business logic lives in a `…Service` interface and its `…ServiceImpl` (or a `…Factory` and its
+ *   `…FactoryImpl`), not in a top-level `object`;
+ * - only `domain` builds a `Transaction`, so none skips its checks.
  *
- * And AC8 (plan task 2.2): no `Double` or `Float` on the money path. No field, parameter or return
- * type in the five packages is a `double`, a `float` or their boxes, not even as a type argument
- * (`List<Double>`); and nothing there calls `BigDecimal(double)`, `BigDecimal.valueOf(double)` or a
- * `toDouble()`/`toFloat()` conversion.
- *
- * And durability and determinism (plan task 6.3; AC22, AC23, R3, R8):
- * - `workflow` reads no wall clock and mints no random id: a replay must see what the first attempt
- *   saw, so time comes from `Clock.Restate` and ids from `random()`;
- * - only the pre-charge rejection and FeeCharge's fingerprint check build a `TerminalException`, so
- *   nothing after the charge can fail terminally;
- * - Postgres is reached from FeeWorkflow only inside a step: no method of FeeWorkflow or FeeCharge
- *   calls the repository, only suspend lambdas nested in a step block of FeeWorkflow do;
- * - `fee_record` has one writer: no class outside `workflow` and `persistence` calls `save`;
- * - only [RestateFeeWorkflowGateway] (with its nested classes) touches the Restate client;
- * - nothing waits by attaching: `api` and `service` call no `attach*` method, and nothing calls a
- *   Restate `attach*`.
- *
- * And the shape rule (plan §2, Q14–Q19, tasks 7.4 and 8.3): business logic lives in a `…Service`
- * interface and its `…ServiceImpl`, or a `…Factory` and its `…FactoryImpl`:
- * - no top-level `object` in the six packages holds a public function, except the allow-list: the
- *   value helper `DateFormatter` (Q15), the codecs `RejectionMetadata` and the serializers (Q17),
- *   and the constants `FeeApiExamples`. A companion object is no top-level object, so the
- *   factories, constants and value rules on one stay (`Money`'s, Q18);
- * - every class named `…Service` is an interface;
- * - every `…ServiceImpl` implements exactly one `…Service`, the one with its own stem, and every
- *   `…FactoryImpl` exactly one `…Factory`, the one with its own stem.
- *
- * And the domain factory (Q19): only `domain` builds a `Transaction`, so nothing else can hold one
- * that skipped its checks. No class outside `domain` calls its constructor or its `copy`.
- *
- * Every rule fails on a class that breaks it (the offender classes below), so a green run means
- * something. Production classes only.
+ * Each rule is also run against a planted offender, so a green run means the rule really bites.
  */
 class ArchitectureTest {
 
@@ -200,10 +177,8 @@ class ArchitectureTest {
     }
 
     /**
-     * R8's premise, confirmed on the bytecode: `runBlock("lookup") { withContext(IO) { find } }` and
-     * `runBlock("record") { withContext(IO) { save } }` compile to suspend-lambda classes nested in
-     * FeeWorkflow (the `withContext` lambda inside the step block), and those make the calls. So
-     * the rule above checks real call sites, and doesn't pass for want of any.
+     * Proves the step rule above checks real call sites. `runBlock { withContext(IO) { … } }`
+     * compiles to suspend-lambda classes nested in FeeWorkflow, and those make the calls.
      */
     @Test
     fun `FeeWorkflow calls find and save, each from a lambda inside a step`() {
@@ -282,7 +257,7 @@ class ArchitectureTest {
         Shape.transactionsBuiltOnlyInTheDomain(APP_PACKAGE).check(classes)
     }
 
-    /** The rule above checks a real call site, and doesn't pass for want of any: the factory builds every Transaction. */
+    /** Proves the rule above checks a real call site: the factory builds every Transaction. */
     @Test
     fun `the transaction factory is what builds a Transaction`() {
         val builders = classes.filter { type -> type.codeUnits.any { unit -> unit.callsFromSelf.any { Shape.TRANSACTION_BUILT.test(it) } } }
@@ -292,7 +267,7 @@ class ArchitectureTest {
         assertEquals(listOf(TransactionFactoryImpl::class.java.name), builders)
     }
 
-    /** The allow-list names real Kotlin objects, so no entry is stale, and the detection sees them. */
+    /** Keeps the allow-list free of stale names, and proves the object detection works. */
     @Test
     fun `every allow-listed object is a top-level object in production`() {
         val objects = classes.filter { Shape.isTopLevelObject(it) }.map { it.name }.toSet()
@@ -305,7 +280,7 @@ class ArchitectureTest {
     fun `the shape rules catch what they claim to`() {
         listOf(
             Shape.noLogicInObjects(APP_PACKAGE) to importClass(LogicInAnObject::class.java),
-            // A production object taken off the allow-list: the rule sees real Kotlin objects, not only the planted one.
+            // A real production object, taken off the allow-list, must fail the rule too.
             Shape.noLogicInObjects(APP_PACKAGE, allowed = emptySet()) to importClass(DateFormatter::class.java),
             Shape.servicesAreInterfaces(APP_PACKAGE) to importClass(PricingClassService::class.java),
             Shape.servicesAreInterfaces(APP_PACKAGE) to importClass(AbstractPricingService::class.java),
@@ -325,7 +300,7 @@ class ArchitectureTest {
         }
     }
 
-    /** The object rule is no ban on objects: a companion's factory, an allow-listed helper and a matching pair pass. */
+    /** The object rule is not a ban on objects: these allowed shapes pass. */
     @Test
     fun `the shape rules let a companion object, an allow-listed object and a matching pair through`() {
         assertDoesNotThrow { Shape.noLogicInObjects(APP_PACKAGE).check(importWithNested(FactoryOnACompanion::class.java)) }
@@ -334,7 +309,7 @@ class ArchitectureTest {
         assertDoesNotThrow { Shape.implsImplementTheirInterface(APP_PACKAGE).check(importClass(QuoteFactoryImpl::class.java)) }
     }
 
-    /** Q18: `Money` is a value class now, its bounds and helpers on its companion, so it needs no place on the allow-list. */
+    /** `Money` is a value class with its helpers on its companion, so it needs no allow-list entry. */
     @Test
     fun `Money is no top-level object, and passes the object rule with no allow-list`() {
         val money = importWithNested(Money::class.java)
@@ -350,21 +325,21 @@ class ArchitectureTest {
     }
 
     /**
-     * The durability rules (plan task 6.3). Each takes the packages or classes it guards, so the
-     * offender classes below, in `com.cashi.fee`, can be checked against the same rule.
+     * The durability rules. Each takes the packages or classes it guards, so the offender classes
+     * below can be checked against the same rule.
      */
     private object Durability {
 
-        /** AC22, R8: a replay re-runs the code between steps, so it must compute the same values. */
+        /** A replay re-runs the code between steps, so that code must compute the same values. */
         fun noClockOrRandom(vararg packages: String): ArchRule =
             noClasses().that().resideInAnyPackage(*packages)
                 .should().accessTargetWhere(NON_DETERMINISTIC)
                 .because("a replay must see what the first attempt saw: time comes from Clock.Restate and ids from random() (AC22, R8)")
 
         /**
-         * AC23, R3: a terminal failure after the charge would end the run without its record. Only
-         * the pre-charge rejection and FeeCharge's fingerprint check (which changes nothing) may
-         * build one. A subclass's constructor builds one too, so it is caught as well.
+         * A terminal failure after the charge would end the run without its record. Only the
+         * pre-charge rejection and FeeCharge's fingerprint check, which changes nothing, may build
+         * one. A subclass's constructor counts too.
          */
         fun terminalOnlyBeforeTheCharge(vararg packages: String): ArchRule =
             codeUnits().that().areDeclaredInClassesThat().resideInAnyPackage(*packages)
@@ -374,7 +349,7 @@ class ArchitectureTest {
                 .should(notConstruct(TerminalException::class.java))
                 .because("nothing after the charge may fail terminally (D2b, AC23, R3)")
 
-        /** R8: a repository call in a handler's own method would run outside any step, on every replay. */
+        /** A repository call in a handler's own method would run outside any step, on every replay. */
         fun noDirectRepositoryCalls(vararg handlers: Class<*>): ArchRule =
             noClasses().that(DescribedPredicate.describe("are ${handlers.joinToString { it.simpleName }}") { type: JavaClass ->
                 type.name in handlers.map { it.name }
@@ -383,30 +358,29 @@ class ArchitectureTest {
                 .because("Postgres is reached only inside a durable step, whose result the journal keeps (R8)")
 
         /**
-         * R8: in [packages], a repository call sits only in a suspend lambda nested in [workflow]
-         * whose outermost lambda is a step block. A `withContext(IO) { … }` written outside a
-         * `runBlock` is a lambda too, but its outermost lambda has a receiver, so it fails.
+         * In [packages], a repository call sits only in a lambda inside a step of [workflow].
+         * A `withContext(IO) { … }` outside a `runBlock` is a lambda with a receiver, so it fails.
          */
         fun repositoryOnlyInSteps(workflow: Class<*>, vararg packages: String): ArchRule =
             noClasses().that().resideInAnyPackage(*packages).and(not(stepLambdaOf(workflow)))
                 .should().callMethodWhere(REPOSITORY_CALL)
                 .because("Postgres is reached only inside a durable step, whose result the journal keeps (R8)")
 
-        /** A3: the `record` step is the one writer of `fee_record`. */
+        /** The `record` step is the one writer of `fee_record`. */
         fun oneWriter(): ArchRule =
             noClasses().that().resideInAPackage(APP_PACKAGE)
                 .and().resideOutsideOfPackages(WORKFLOW_PACKAGE, PERSISTENCE_PACKAGE)
                 .should().callMethodWhere(REPOSITORY_SAVE)
                 .because("fee_record has one writer, the workflow's record step (A3)")
 
-        /** The gateway is the one class that knows the Restate client (plan §2). */
+        /** The gateway is the one class that knows the Restate client. */
         fun restateClientOnlyInTheGateway(): ArchRule =
             noClasses().that().resideInAPackage(APP_PACKAGE)
                 .and().doNotBelongToAnyOf(RestateFeeWorkflowGateway::class.java)
                 .should().dependOnClassesThat().resideInAPackage("dev.restate.client..")
                 .because("RestateFeeWorkflowGateway is the only class that touches the Restate client (plan §2)")
 
-        /** Plan §3 step 5: the API waits by polling, never by attaching, so nothing is held open. */
+        /** The API waits by polling, never by attaching, so nothing is held open. */
         fun noAttach(vararg packages: String): ArchRule =
             noClasses().that().resideInAnyPackage(*packages)
                 .should().callMethodWhere(DescribedPredicate.describe("an attach* method") { call: JavaMethodCall -> call.name.startsWith("attach") })
@@ -420,11 +394,9 @@ class ArchitectureTest {
                 .because("the gateway polls the output with a deadline, never attaches (plan §3)")
 
         /**
-         * A class inside a step of [workflow]: a suspend lambda (perhaps nested in others) whose
-         * outermost lambda, the one directly inside [workflow], is a `suspend () -> T` block, the
-         * shape `runBlock` takes. A lambda with a receiver (`withContext`, `coroutineScope`) is
-         * not a step. ArchUnit can't follow the inlined `runBlock` call itself, so the shape stands
-         * for it.
+         * A suspend lambda in [workflow] whose outermost lambda is a `suspend () -> T` block, the
+         * shape `runBlock` takes. ArchUnit can't see the inlined `runBlock` call, so the shape
+         * stands for it. A lambda with a receiver (`withContext`) is not a step.
          */
         fun stepLambdaOf(workflow: Class<*>): DescribedPredicate<JavaClass> =
             DescribedPredicate.describe("are lambdas inside a ${workflow.simpleName} step") { type: JavaClass ->
@@ -441,7 +413,7 @@ class ArchitectureTest {
         private val REPOSITORY_SAVE: DescribedPredicate<JavaMethodCall> =
             DescribedPredicate.describe("FeeRecordRepository.save") { call -> REPOSITORY_CALL.test(call) && call.name == "save" }
 
-        /** `kotlinx.datetime` isn't on the classpath, so no offender shows that name; it is matched by name. */
+        /** Matched by name, because `kotlinx.datetime` isn't on the classpath. */
         private val NON_DETERMINISTIC: DescribedPredicate<JavaAccess<*>> =
             DescribedPredicate.describe(
                 "UUID.randomUUID, Instant.now, LocalDateTime.now, System.currentTimeMillis, or kotlin.time / kotlinx.datetime Clock.System",
@@ -461,7 +433,7 @@ class ArchitectureTest {
             FeeCharge::class.java.name to "refuseOtherPayload",
         )
 
-        /** `suspend () -> T`: a suspend lambda with no receiver and no parameter is a `Function1` of its continuation. */
+        /** `suspend () -> T` compiles to a `Function1` that takes only its continuation. */
         private const val STEP_BLOCK = "kotlin.jvm.functions.Function1"
 
         private fun JavaClass.isSuspendLambda(): Boolean =
@@ -478,12 +450,12 @@ class ArchitectureTest {
     }
 
     /**
-     * The shape rules (plan §2, Q14–Q19, tasks 7.4 and 8.3). Each takes the packages it guards, so
-     * the offender classes below, in `com.cashi.fee`, can be checked against the same rule.
+     * The shape rules. Each takes the packages it guards, so the offender classes below can be
+     * checked against the same rule.
      */
     private object Shape {
 
-        /** Q15, Q17: the top-level objects that may hold public functions. `Money` left it as a value class (Q18). */
+        /** The top-level objects that may hold public functions: a value helper, codecs, constants. */
         val ALLOWED_OBJECTS: Set<String> = setOf(
             DateFormatter::class.java.name,
             RejectionMetadata::class.java.name,
@@ -493,37 +465,36 @@ class ArchitectureTest {
         )
 
         /**
-         * Q14: a top-level `object` holds no public function unless [allowed]. Every class of
-         * [packages] is checked, so the rule never runs empty once the allow-list is all that is left.
+         * A top-level `object` holds no public function unless [allowed]. Every class of
+         * [packages] is checked, so the rule never runs empty.
          */
         fun noLogicInObjects(vararg packages: String, allowed: Set<String> = ALLOWED_OBJECTS): ArchRule =
             classes().that().resideInAnyPackage(*packages)
                 .should(notBeATopLevelObjectWithPublicFunctions(allowed))
                 .because("business logic lives in a …Service and its …ServiceImpl; only value helpers, codecs and constants stay objects (Q14, Q15, Q17)")
 
-        /** Q14: a `…Service` is the interface its callers take and its tests fake. */
+        /** A `…Service` is the interface its callers take and its tests fake. */
         fun servicesAreInterfaces(vararg packages: String): ArchRule =
             classes().that().resideInAnyPackage(*packages).and().haveSimpleNameEndingWith(SERVICE_SUFFIX)
                 .should().beInterfaces()
                 .because("a …Service is an interface; its implementation is the …ServiceImpl (Q14)")
 
-        /** Q14, Q19: a `…ServiceImpl` implements its own `…Service` and no other; a `…FactoryImpl` its own `…Factory`. */
+        /** A `…ServiceImpl` implements its own `…Service` and no other; the same for factories. */
         fun implsImplementTheirInterface(vararg packages: String): ArchRule =
             classes().that().resideInAnyPackage(*packages).and(haveAnImplName())
                 .should(implementExactlyTheInterfaceOfTheirStem())
                 .because("each …ServiceImpl implements the one …Service with its own stem (Q14), each …FactoryImpl the one …Factory (Q19)")
 
         /**
-         * Q19: a [Transaction] is built only in `domain`, by its factory, so no other layer holds one
-         * that skipped the checks. `internal` can't say it: the whole of `src/main` is one module.
-         * `copy` builds one too, so it counts.
+         * Only `domain` builds a [Transaction], so no other layer holds one that skipped the checks.
+         * `internal` can't enforce it, because all of `src/main` is one module. `copy` counts too.
          */
         fun transactionsBuiltOnlyInTheDomain(vararg packages: String): ArchRule =
             noClasses().that().resideInAnyPackage(*packages).and().resideOutsideOfPackage(DOMAIN_PACKAGE)
                 .should().callCodeUnitWhere(TRANSACTION_BUILT)
                 .because("only the domain builds a Transaction, through TransactionFactory, so none skips its checks (Q19)")
 
-        /** A call of [Transaction]'s constructor or of its `copy`, whose JVM name `internal` mangles (`copy$<module>`). */
+        /** A call of [Transaction]'s constructor or `copy` (`internal` mangles it to `copy$<module>`). */
         val TRANSACTION_BUILT: DescribedPredicate<JavaCall<*>> =
             DescribedPredicate.describe("Transaction's constructor or its copy") { call ->
                 call.targetOwner.name == Transaction::class.java.name && (call.name == CONSTRUCTOR || call.name.startsWith("copy"))
@@ -553,7 +524,7 @@ class ArchitectureTest {
                 }
             }
 
-        /** The role a class named `…<Role>Impl` implements: `Service` or `Factory`; null for any other name. */
+        /** `Service` or `Factory` for a class named `…<Role>Impl`; null for any other name. */
         private fun roleOf(type: JavaClass): String? = ROLES.firstOrNull { type.simpleName.endsWith(it + IMPL) }
 
         private fun haveAnImplName(): DescribedPredicate<JavaClass> =
@@ -576,7 +547,7 @@ class ArchitectureTest {
                 }
             }
 
-        /** The roles whose implementation is named `…<Role>Impl` after its interface `…<Role>` (Q14, Q19). */
+        /** The roles whose implementation is named `…<Role>Impl` after its interface `…<Role>`. */
         private val ROLES = listOf("Service", "Factory")
         private const val SERVICE_SUFFIX = "Service"
         private const val IMPL = "Impl"
@@ -584,10 +555,10 @@ class ArchitectureTest {
     }
 
     /**
-     * The AC8 rules. ArchUnit sees Kotlin's `Double` as the primitive `double` and `Double?` as
-     * `java.lang.Double`, so both are named. Kotlin's `x.toDouble()` compiles to `doubleValue()` on
-     * a number and to `Double.parseDouble` on a string; on an `Int` it is a bytecode conversion with
-     * no call, whose result the type rules or the `BigDecimal(double)` ban then catch.
+     * The no-floating-point rules. ArchUnit sees `Double` as `double` and `Double?` as
+     * `java.lang.Double`, so both are named. `toDouble()` compiles to `doubleValue()` or
+     * `parseDouble`. On an `Int` it makes no call, but the type rules or the
+     * `BigDecimal(double)` ban catch its result.
      */
     private object FloatingPoint {
         val TYPES: Set<String> = setOf("double", "float", "java.lang.Double", "java.lang.Float")
@@ -716,7 +687,7 @@ class ArchitectureTest {
         suspend fun run(key: String): FeeRecord? = records.find(key)
     }
 
-    /** `withContext` without the `runBlock` around it: the read is redone, maybe differently, on every replay. */
+    /** `withContext` with no `runBlock` around it: every replay redoes the read, maybe differently. */
     @Suppress("unused")
     private class LookupOutsideAStep(private val records: FeeRecordRepository) {
         suspend fun run(key: String): FeeRecord? = withContext(Dispatchers.IO) { records.find(key) }
@@ -752,8 +723,8 @@ class ArchitectureTest {
         suspend fun output(id: String): String = client.workflowHandle<String>("FeeWorkflow", id).attachSuspend().response()
     }
 
-    // Offenders for the shape rules, one rule broken each, and the allowed shape. Test classes, so never
-    // imported above. The object offender is top-level, after this class: the rule is about top-level objects.
+    // Offenders for the shape rules, one rule broken each, and the allowed shape. Test classes, so
+    // never imported above. The object offender sits after this class, at the top level of the file.
     private interface PricingService {
         fun price(amount: BigDecimal): BigDecimal
     }
@@ -791,7 +762,7 @@ class ArchitectureTest {
         override fun price(amount: BigDecimal): BigDecimal = amount
     }
 
-    // The same for factories (Q19), and the allowed shape.
+    // The same for factories, and the allowed shape.
     private interface QuoteFactory {
         fun create(amount: BigDecimal): BigDecimal
     }
@@ -818,8 +789,8 @@ class ArchitectureTest {
         override fun create(amount: BigDecimal): BigDecimal = amount
     }
 
-    // Offenders for the Transaction rule (Q19): outside `domain` (this is `com.cashi.fee`), one builds a
-    // Transaction with its constructor, one with copy. Tests share the module, so `internal` lets them.
+    // Offenders for the Transaction rule, outside `domain`: one uses the constructor, one copy.
+    // Tests share the module, so `internal` lets them.
     @Suppress("unused")
     private class TransactionBuiltOutsideTheDomain {
         fun forge(amount: Money): Transaction =
@@ -843,7 +814,7 @@ class ArchitectureTest {
     }
 
     private companion object {
-        /** The five packages of plan §2; the money path runs through all of them. */
+        /** The five application packages; the money path runs through all of them. */
         val MONEY_PACKAGES = arrayOf(
             "com.cashi.fee.domain..",
             "com.cashi.fee.service..",
@@ -872,7 +843,7 @@ class ArchitectureTest {
     }
 }
 
-/** The object rule's offender: business logic in a top-level object. A test class, so never imported above. */
+/** The object rule's offender: business logic in a top-level object. Never imported above. */
 @Suppress("unused")
 private object LogicInAnObject {
     fun feeOf(amount: BigDecimal): BigDecimal = amount.movePointLeft(3)

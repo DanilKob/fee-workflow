@@ -1,8 +1,8 @@
 package com.cashi.fee.domain
 
 /**
- * One registered transaction type. [label] is the canonical spelling, matched exactly (Q11);
- * [ruleId] and [version] are stored on every record, so an audit can tell which rule priced it.
+ * One registered transaction type. [label] is matched exactly. [ruleId] and [version] are stored
+ * on every record, so an audit can tell which rule priced it.
  */
 data class TransactionType(
     val label: String,
@@ -19,10 +19,7 @@ data class TransactionType(
     }
 }
 
-/**
- * The single list of transaction types (D5). Validation and calculation both look types up here;
- * an unknown label is a rejection, never a default fee.
- */
+/** The single list of transaction types. An unknown label is a rejection, never a default fee. */
 interface FeeSchedule {
 
     val types: List<TransactionType>

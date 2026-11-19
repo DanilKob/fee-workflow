@@ -5,7 +5,7 @@ import com.cashi.fee.domain.FeeRecordRepository
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
-/** [FeeRecordRepository] on JPA. Blocking: callers in suspend code run it under `Dispatchers.IO`. */
+/** Blocking JDBC: callers in suspend code must run it under `Dispatchers.IO`. */
 @Component
 class JpaFeeRecordRepository(private val repository: FeeRecordJpaRepository) : FeeRecordRepository {
 

@@ -20,7 +20,10 @@ import java.math.BigDecimal
 import java.time.Duration
 import java.time.LocalDateTime
 
-/** The validator: every invalid field at once, exact labels, bounds the record can store, each asset's scale. */
+/**
+ * The validator lists every invalid field at once. Labels match exactly, and an amount must fit the
+ * record and its asset's scale.
+ */
 class FeeRequestValidationServiceImplTest {
 
     private val mapper: JsonMapper = JacksonConfig.configure(JsonMapper.builder().findAndAddModules()).build()
@@ -136,7 +139,7 @@ class FeeRequestValidationServiceImplTest {
     @ParameterizedTest(name = "{0} {1} as {2}")
     @CsvSource(
         "1000, JPY, FIAT",
-        "1000.0, JPY, FIAT", // trailing zeros don't count, even at scale 0 (Q13)
+        "1000.0, JPY, FIAT", // trailing zeros don't count, even at scale 0
         "0.12345678, BTC, CRYPTO",
         "1.234567890123456789, ETH, CRYPTO",
         "0.003, USDC, CRYPTO",
@@ -218,7 +221,10 @@ class FeeRequestValidationServiceImplTest {
         assertEquals("Charity Donation", validator.validate(request("type" to "\"Charity Donation\"", "amount" to "0.01")).type)
     }
 
-    /** AC27: a missing, malformed or refused field hides no type rule on the others, and none is listed twice. */
+    /**
+     * A missing, malformed or refused field hides no type rule on the other fields.
+     * No field is listed twice.
+     */
     @Test
     fun `an invalid field hides no type rule, and no field is listed twice`() {
         val bankTransferInBtc = arrayOf("type" to "\"Bank Transfer\"", "asset" to "\"BTC\"", "asset_type" to "\"CRYPTO\"")
@@ -260,7 +266,7 @@ class FeeRequestValidationServiceImplTest {
         assertEquals(listOf(InvalidField("state", "must be SETTLED - PENDING FEE")), errorsOf(request("state" to "\"SETTLED\"")))
     }
 
-    /** AC6's four examples, and more: exactly six fraction digits, a space, no zone, a real date-time. */
+    /** Exactly six fraction digits, a space separator, no zone, and a real date-time. */
     @ParameterizedTest(name = "created_at {0}")
     @ValueSource(
         strings = [
@@ -325,7 +331,10 @@ class FeeRequestValidationServiceImplTest {
         assertEquals(listOf("transaction_id"), assertThrows<RequestValidationException> { validator.validateId("a".repeat(65)) }.errors.map { it.field })
     }
 
-    /** No number or boolean is coerced into an id or a label; every field of the wrong JSON type is listed at once. */
+    /**
+     * No number or boolean is coerced into an id or a label. Every field of the wrong JSON type is
+     * listed at once.
+     */
     @Test
     fun `a field of the wrong JSON type is refused, and every one is listed`() {
         val errors = errorsOf(
@@ -345,7 +354,10 @@ class FeeRequestValidationServiceImplTest {
         )
     }
 
-    /** A field of the wrong JSON type takes the place its "is required" would have: the order of the list doesn't change. */
+    /**
+     * A field of the wrong JSON type takes the place its "is required" error would have, so the
+     * order of the list doesn't change.
+     */
     @Test
     fun `a field of the wrong JSON type is listed in its own place, among the factory's violations`() {
         assertEquals(
@@ -369,7 +381,6 @@ class FeeRequestValidationServiceImplTest {
         }
     }
 
-    /** AC27: every field invalid at once, each listed exactly once. */
     @Test
     fun `every field invalid at once is listed once each`() {
         val errors = errorsOf(

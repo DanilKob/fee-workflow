@@ -17,9 +17,8 @@ import tools.jackson.databind.json.JsonMapper
 import java.math.BigDecimal
 
 /**
- * AC30: the brief's sample payload through the real `POST /transaction/fee` over HTTP, with the app
- * on a random port against a real Restate server and a real Postgres (Testcontainers), its Restate
- * endpoint registered through the admin API. Asserts the raw body, one charge and one record.
+ * The brief's sample payload through the real `POST /transaction/fee`, against a real Restate
+ * server and Postgres. Asserts the raw body, one charge and one record.
  */
 @FeeIntegrationTest
 class FeeEndToEndIT {
@@ -38,12 +37,12 @@ class FeeEndToEndIT {
     fun `the brief's sample transaction gets its fee, charged once and recorded once`() {
         val response = postFee(BRIEF_REQUEST)
 
-        // AC1: status, content type and the brief's expected body, field by field.
+        // Status, content type and the brief's expected body, field by field.
         assertEquals(200, response.statusCode(), response.body())
         assertEquals("application/json", response.headers().firstValue("content-type").orElse(null))
         assertEquals(json.readTree(BRIEF_RESPONSE), json.readTree(response.body()))
 
-        // AC3: the raw text, not a parsed value.
+        // Plain number form, checked on the raw text, not a parsed value.
         val body = response.body()
         assertRendered(body, "amount", "1000")
         assertRendered(body, "fee", "1.5")
@@ -99,9 +98,8 @@ class FeeEndToEndIT {
     }
 
     /**
-     * A resend once the fee is recorded is decided by the stored record's fingerprint (D4): the same
-     * payload gets the first body, a different one never gets the first one's result.
-     * `idempotency.feature` covers every other duplicate case (AC16–AC19).
+     * Once the fee is recorded, the stored fingerprint decides a resend: the same payload gets the
+     * first body, a different one never does. `idempotency.feature` covers the other cases.
      */
     @Test
     fun `a resend gets the same body for the same payload, and 409 with nothing changed for another`() {
@@ -125,9 +123,9 @@ class FeeEndToEndIT {
     }
 
     /**
-     * The 400 body as it goes over the wire: `application/problem+json` with a top-level `errors`
-     * array (AC27's shape, which relies on Jackson flattening the problem's properties). An invalid
-     * amount still lets the asset type's rule violation be listed.
+     * The 400 body on the wire: problem+json with a top-level `errors` array, which relies on
+     * Jackson flattening the problem's properties. An invalid amount doesn't hide the asset type's
+     * error.
      */
     @Test
     fun `an invalid body is a 400 problem with a top-level errors array, and nothing is charged or recorded`() {

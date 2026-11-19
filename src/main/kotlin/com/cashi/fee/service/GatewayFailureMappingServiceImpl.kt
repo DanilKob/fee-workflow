@@ -4,7 +4,6 @@ import com.cashi.fee.service.FeeWorkflowGateway.GatewayFailure
 import com.cashi.fee.service.GatewayFailureMappingService.Outcome
 import org.springframework.stereotype.Service
 
-/** Plan §3 step 4's failure table, case by case. */
 @Service
 class GatewayFailureMappingServiceImpl : GatewayFailureMappingService {
 

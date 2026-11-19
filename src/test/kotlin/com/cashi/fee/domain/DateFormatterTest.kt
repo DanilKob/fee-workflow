@@ -7,7 +7,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import java.time.LocalDateTime
 
-/** The date parser of D8: one strict format, a UTC local date-time with microseconds. */
+/** The date parser: one strict format, a UTC local date-time with microseconds. */
 class DateFormatterTest {
 
     @Test

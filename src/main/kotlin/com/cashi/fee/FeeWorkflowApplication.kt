@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.runApplication
 
-/** The app. `@ConfigurationPropertiesScan` binds and validates each package's own settings (`fees.*`). */
+/** `@ConfigurationPropertiesScan` binds and validates each package's settings, such as `fees.*`. */
 @SpringBootApplication
 @ConfigurationPropertiesScan
 @EnableRestate

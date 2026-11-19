@@ -3,10 +3,9 @@ package com.cashi.fee.domain
 import java.math.BigDecimal
 
 /**
- * The schedule this service ships: the AC14 table. Adding a type means one entry here plus one
- * row in `transaction_types.feature` (requirements §4). `DomainConfig` passes it through
- * [FeeScheduleValidationService] while it builds the bean, so a malformed schedule stops the application
- * at startup, and `FeeScheduleContractTest` checks every entry.
+ * The shipped transaction types. Adding a type means one entry here plus one row in
+ * `transaction_types.feature`. `DomainConfig` validates the schedule at startup, so a malformed
+ * one stops the application. `FeeScheduleContractTest` checks every entry.
  */
 class DefaultFeeSchedule : FeeSchedule {
 
