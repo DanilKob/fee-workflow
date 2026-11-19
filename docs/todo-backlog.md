@@ -3,12 +3,6 @@
 The only list of open items. Each entry says what was found, the trigger that makes it worth
 doing, and the plan for when the trigger fires. Delete an entry when it ships.
 
-## CI
-
-- **Finding:** no CI runs the build (practice D1); `docs/plan.md` §9 records the deviation.
-- **Trigger:** the repo is pushed to GitHub for submission.
-- **Plan:** a GitHub Actions job running `./mvnw -B verify` (Docker is available on hosted runners).
-
 ## Workflow tests without Spring
 
 - **Finding:** every workflow branch is tested through the full IT stack (Spring, Postgres, Restate).

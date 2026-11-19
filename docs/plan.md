@@ -837,7 +837,8 @@ AC8/AC10 scenarios. Each slice's base is the commit before it.
   `transaction_id` allow-list (4.1) and the client's URL-encoding of workflow keys guard the
   Restate paths.
 - **K2 followed:** every departure from `requirements.md` is listed in §10 with its reason.
-- **D1 deviates:** no CI in this plan; backlog entry below.
+- **D1 followed (after the build):** `.github/workflows/build.yml` runs `./mvnw -B verify` on every
+  push to `main` and every pull request; the backlog entry is closed.
 - **R-S3 followed:** slice 1 is end to end.
 - **R-A5 followed:** `@ACn` tags plus `TraceabilityTest`.
 

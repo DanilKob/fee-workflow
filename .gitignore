@@ -22,3 +22,5 @@ target/
 .claude/wikingai/*.local.json
 .claude/wikingai/*.local/
 /.claude/
+# the kit's own answers file: machine-local, like .claude/
+.copier-answers.yml

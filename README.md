@@ -4,6 +4,23 @@ A Kotlin / Spring Boot 4 service: `POST /transaction/fee` takes a settled transa
 fee, charges it once and records it, and `GET /transaction/{id}/fee` reads the result back. A Restate
 workflow (server 1.8.1) drives the steps, and Postgres holds the fee records.
 
+What makes it hard, and where each guarantee is proven:
+
+- **Charged at most once**, even with retries, concurrent duplicates, crashes and resends after
+  Restate forgets a finished run (`idempotency.feature`, `durability.feature`).
+- **Exact money**: `BigDecimal` from the HTTP body to the database, rounded once, half-up, at the
+  asset's own scale; the build fails if a `Double` appears on the money path (`money.feature`,
+  `ArchitectureTest`).
+- **Crash-safe**: every step is journaled by Restate; a database outage after the charge retries
+  and then pauses for an operator instead of losing the charge (`durability.feature`).
+
+## Prerequisites
+
+- Docker with a few GB free (the stack, Testcontainers and the image build all use it).
+- JDK 21 for `./mvnw` (the Maven wrapper downloads Maven itself).
+- Free host ports 8080, 8081, 9070 and 5433. The first `docker compose up --build` takes a few
+  minutes while it builds the image.
+
 ## Run
 
 ```sh
@@ -57,12 +74,13 @@ Every error is RFC 9457 `application/problem+json`, and a 400 lists every invali
 
 | Command | What it runs |
 |---|---|
-| `./mvnw -q verify` | The gate: 377 unit tests and 149 integration tests, including 122 Cucumber scenarios. Docker must be running (Testcontainers starts Postgres and Restate) |
+| `./mvnw -q verify` | The gate: every unit test, then the integration tests and the Cucumber scenarios against real Postgres and Restate. Docker must be running (Testcontainers starts both) |
 | `./mvnw -q test` | Unit tests only; every `*IT` is skipped |
 | `./scripts/smoke.sh` | `docker compose up --build`, every `api-tests/*.hurl` file against the stack, then `docker compose down` (volumes kept). `--keep` leaves the stack running |
 
 Every acceptance criterion in `docs/requirements.md` (AC1–AC31) has a scenario tagged `@ACn`;
-`TraceabilityTest` fails if one is missing. Full table: [`docs/plan.md` §6](docs/plan.md).
+`TraceabilityTest` fails the build if one is missing. CI runs the same `./mvnw -B verify` on every
+push and pull request (`.github/workflows/build.yml`). Full table: [`docs/plan.md` §6](docs/plan.md).
 
 | Feature file (`src/test/resources/features/`) | ACs |
 |---|---|
@@ -132,19 +150,19 @@ wire codecs and constants are Kotlin `object`s. `ArchitectureTest` enforces both
 
 ## Design decisions
 
-From `docs/requirements.md` §3 (D*n*) and `docs/plan.md` §1 (Q*n*).
+The full list, with the reasoning, is in `docs/requirements.md` §3 and `docs/plan.md` §1.
 
 | Decision | Rejected | Why |
 |---|---|---|
-| D1: a Spring controller calls the Restate ingress | the bare Restate ingress | exact path, number format, validation and 400/409/202/503 before any workflow exists |
-| D2: the charge is a `FeeCharge` Virtual Object keyed by `transaction_id` | a Postgres ledger; a fake payments service | one writer per key and a journaled call, so Restate itself charges once |
-| D2b: after the charge, retry then pause | a saga with refund | a short DB outage must not give up a correct charge; a paused invocation is visible and resumable |
-| D4: Postgres (Flyway) is the system of record | Restate state only | records outlive Restate's retention and can be queried with SQL |
-| D5: fee rules in a Kotlin registry (`FeeSchedule`) | YAML; a DB table | every rule change gets review and tests; rule id and version stored per record |
-| D7: same id, different payload is 409, by SHA-256 fingerprint | return the original result | a changed payload under the same id is a caller bug |
-| D9: HALF_UP once, at each asset's scale (USD 2, JPY 0, BTC 8, ETH 18) | HALF_EVEN; 2 decimals for all | matches a hand calculation and is correct for JPY and crypto |
-| D11: wait 10 s, then 202 with a status link | 504 after 30 s; wait forever | nothing failed; answer before client or proxy timeouts |
-| Q1: at most 20 integer digits in `amount`, checked before any arithmetic | no ceiling | fits `numeric(38,18)`; `1E+20000000` is never expanded |
+| A Spring controller in front of the Restate ingress | the bare Restate ingress | exact path, number format, validation and 400/409/202/503 before any workflow exists |
+| The charge is a `FeeCharge` Virtual Object keyed by `transaction_id` | a Postgres ledger; a fake payments service | one writer per key and a journaled call, so Restate itself charges once |
+| After the charge, retry and then pause; never refund | a saga with refund | a short DB outage must not give up a correct charge; a paused invocation is visible and resumable |
+| Postgres (Flyway) is the system of record | Restate state only | records outlive Restate's retention and can be queried with SQL |
+| Fee rules live in a Kotlin registry (`FeeSchedule`) | YAML; a DB table | every rule change gets review and tests; rule id and version stored per record |
+| The same id with a different payload is a 409, detected by a SHA-256 fingerprint | return the original result | a changed payload under the same id is a caller bug |
+| Round once, half-up, at each asset's scale (USD 2, JPY 0, BTC 8, ETH 18) | HALF_EVEN; 2 decimals for all | matches a hand calculation and is correct for JPY and crypto |
+| Wait up to 10 s, then answer 202 with a status link | 504 after 30 s; wait forever | nothing failed; answer before client or proxy timeouts |
+| At most 20 integer digits and 18 decimals in `amount`, checked before any arithmetic | no ceiling | fits `numeric(38,18)`; `1E+20000000` is never expanded |
 | `FeeCharge` checks the payload fingerprint | trust the caller | a charge with no record still refuses a different payload (409) |
 | The workflow re-checks its own input in `calculate` | trust the API | a `run` sent straight to the ingress cannot cause a charge the API would refuse |
 
@@ -201,7 +219,6 @@ two extra types (Bank Transfer, Charity Donation) show the extension point.
 
 ## In production I would
 
-- add CI running `./mvnw -B verify` (backlog);
 - test the workflow branches without Spring, with Restate's test SDK (backlog);
 - add a GET branch for a run an operator cancelled or killed, which now answers 202 until retention
   ends (backlog);
@@ -216,7 +233,13 @@ two extra types (Bank Transfer, Charity Donation) show the extension point.
   (`docs/requirements.md`).
 - An implementation plan was reviewed twice by an adversarial plan review and approved before any
   code (`docs/plan.md`).
-- The build ran in six vertical slices, each built by AI agents at a stated model tier, each verified
-  with `./mvnw verify` and the smoke test, and each passed through an adversarial review gate whose
-  findings were fixed or explained (as-built notes in `docs/plan.md` §5).
-- The harness lives in `CLAUDE.md`.
+- The build ran in eight slices: six vertical feature slices, then a services refactor and a DDD
+  refactor (a domain factory and a `Money` value object). Each was built by AI agents at a stated
+  model tier, verified with `./mvnw verify` and the smoke test, and passed through an adversarial
+  review gate. Every finding was fixed or explained in the slice's as-built note in `docs/plan.md`
+  §5, which is the step-by-step history; the git history itself is squashed.
+- The reviews caught real bugs, for example a tiny-exponent amount that cost minutes of CPU per
+  request, a 14-hour shift in `created_at` under a non-UTC JVM, Restate refusing its own data after a
+  container restart, and a signed `created_at` year that would have charged a fee with no record.
+- The harness instructions live in `CLAUDE.md`; the kit's configuration under `.claude/` is kept
+  private.
